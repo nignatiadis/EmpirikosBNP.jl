@@ -4,11 +4,41 @@ abstract type AbstractMHProposal end
 Base.@kwdef struct AverageImputationProposal{T}  <: AbstractMHProposal
     mh_steps::Int = 3 
     base::T = Normal() 
-    var::Float64 = 1.0
 end
 
-function conditional_pdf(d::Distribution, config_sample::ConfigurationSample, z̄)
-    pdf(d, IIDSample(config_sample, z̄)) 
+Base.@kwdef struct VarianceProposal{D, T}  <: AbstractMHProposal
+    mh_steps::Int = 3 
+    default_dist::D 
+    dof::T = Inf
+end
+
+mutable struct VariancePolyaSampler{D,T, R, I, V, S}
+    σ²_prior::D
+    base_polya::T
+    imputation_mh::I
+    variance_mh::V
+    realized_pt::R
+    σ²::Float64
+    data::Vector{S} # config_samples 
+end
+
+function VariancePolyaSampler(data; base_polya)
+    # assuming data is a vector of ConfigurationSample
+    Ss = var.(EmpirikosBNP.iid_samples.(data))
+    σ²_prior = EmpirikosBNP.quantiles_to_invχ²(extrema(Ss)...)
+    realized_pt = rand(base_polya)
+    realized_pt = realized_pt / std(realized_pt)
+
+    
+    VariancePolyaSampler(
+        σ²_prior,
+        base_polya,
+        AverageImputationProposal(),
+        VarianceProposal(3, σ²_prior, Inf),
+        realized_pt,
+        σ²_prior,
+        data
+    )
 end
 
 
@@ -49,15 +79,7 @@ end
 
 
 
-mutable struct VariancePolyaSampler{D,T, R, I, V, S}
-    σ²_prior::D
-    base_polya::T
-    imputation_mh::I
-    variance_mh::V
-    realized_pt::R
-    σ²::Float64
-    data::Vector{S} # config_samples 
-end
+
 
 function StatsBase.sample!(vp::VariancePolyaSampler)
     sample_posterior_polya_tree!(vp) # normalizes to variance 1?
@@ -65,12 +87,34 @@ function StatsBase.sample!(vp::VariancePolyaSampler)
     impute_zbar!(vp)
 end
 
+
 function sample_posterior_polya_tree!(vp::VariancePolyaSampler)
+   # TODO: rescale suitably
    zero_offsets!(vp.base_polya)
    posterior!(vp.data, vp.base_polya)
    realized_pt = rand(vp.base_polya)
    vp.realized_pt = realized_pt / std(realized_pt)
 end
+
+#function StatsBase.fit!(gc::AbstractNealAlgorithm, progress=true;
+#              samples=5000, burnin=samples÷10)
+
+#    assignments = Matrix{Int}(undef, length(gc.data), samples)
+#    components = Vector{typeof(gc.components)}()
+#    log_αs = Vector{Float64}(undef, samples)
+
+#    @showprogress (progress ? 1 : Inf) "Gibbs sampling burnin" for _ in 1:burnin
+#        sample!(gc)
+#    end
+
+#    @showprogress (progress ? 1 : Inf) "Gibbs sampling" for i in 1:samples
+#        sample!(gc)
+#        assignments[:,i] .= gc.assignments
+#        push!(components, copy(gc.components))
+#        log_αs[i] = gc.logα
+##    end
+#    NealAlgorithmSamples(gc, assignments, components, log_αs)
+#end
 
 #mutable struct VariancePolyaSamples
 #    σ²::Vector{Float64}

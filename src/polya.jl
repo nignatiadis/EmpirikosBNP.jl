@@ -89,8 +89,8 @@ end
 
 function ∫x²dP(d::TDist, a, b)
     ν = d.ν
-    if ν != 5 
-        throw(ArgumentError("Only implemented for TDist(5) currently"))
+    if ν != 5 && ν != 8
+        throw(ArgumentError("Only implemented for TDist(5) and TDist(8) currently"))
     end
 
     if a >= 0 && isinf(a) 
@@ -100,17 +100,30 @@ function ∫x²dP(d::TDist, a, b)
         throw(ArgumentError("b cannot be -Inf"))
     end
     
-    function primitive(t)
-        sqrt5 = sqrt(5.0)
-        term1 = (5.0 * t * (t^2 - 5)) / ((t^2 + 5)^2)
-        term2 = sqrt5 * atan(t / sqrt5)
-        result = (sqrt5 * (term1 + term2)) / (3 * π)
-        return result
+    function primitive(t, ν)
+        if ν == 5 
+            if isinf(t)
+                return t > 0 ? Float64(5/6) : Float64(-5/6)
+            else 
+                sqrt5 = sqrt(5.0)
+                term1 = (5.0 * t * (t^2 - 5)) / ((t^2 + 5)^2)
+                term2 = sqrt5 * atan(t / sqrt5)
+                result = (sqrt5 * (term1 + term2)) / (3 * π)
+                return result
+            end 
+        elseif ν == 8
+            if isinf(t)
+                return t > 0 ? Float64(2/3) : Float64(-2/3)
+            else 
+                return (2 * t^3 * (t^4 + 28 * t^2 + 280)) / (3 * (t^2 + 8)^(7/2))
+            end
+        else 
+            throw(ArgumentError("Only implemented for TDist(5) and TDist(8) currently"))
+        end
+   
     end
 
-    lhs = isinf(a) ? Float64(-5/6) : primitive(a)
-    rhs = isinf(b) ? Float64(5/6) : primitive(b)
-    rhs - lhs
+    primitive(b, ν) - primitive(a, ν)
 end
 
 function ∫x²dP(d::Empirikos.Folded, a, b)
@@ -166,11 +179,14 @@ Base.@kwdef mutable struct ConfigurationSample{V, S, T} <: AbstractIIDSample{V}
     Z̄::T = zero(Float64)
 end
 
+
 function ConfigurationSample(iid_sample::IIDSample)
     Z̄ = mean(iid_sample.Z)
     configuration = iid_sample.Z .- Z̄
     ConfigurationSample(configuration=configuration)
 end
+
+ScaledChiSquareSample(config::ConfigurationSample) = config.S²
 
 StatsBase.nobs(config::ConfigurationSample) = length(config.configuration)
 iid_samples(config::ConfigurationSample) = config.configuration .+ config.Z̄

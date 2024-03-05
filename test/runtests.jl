@@ -35,6 +35,21 @@ polyatreet = rand(ptt)
 @test Float64(quadgk(x -> x^2*pdf(polyatreet, x), -Inf, Inf)[1]) ≈ var(polyatreet) atol = 1e-6
 @test std(polyatreet) == sqrt(var(polyatreet))
 
+
+ptt_8 = PolyaTreeDistribution(base=Empirikos.fold(TDist(8)), 
+    J=7, α=2.0, 
+    symmetrized=true,
+    median_centered=false)
+
+
+polyatreet_8 = rand(ptt_8)
+
+@test Float64(quadgk(x -> pdf(polyatreet_8, x), -Inf, Inf)[1]) ≈ 1.0 atol = 1e-4
+@test Float64(quadgk(x -> x*pdf(polyatreet_8, x), -Inf, Inf)[1]) ≈ 0.0 atol = 1e-10
+@test Float64(quadgk(x -> x^2*pdf(polyatreet_8, x), -Inf, Inf)[1]) ≈ var(polyatreet_8) atol = 1e-5
+@test std(polyatreet_8) == sqrt(var(polyatreet_8))
+
+
 ptt_scale = PolyaTreeDistribution(base=Empirikos.fold(TDist(5) / std(TDist(5))), 
     J=7, α=2.0, 
     symmetrized=true,

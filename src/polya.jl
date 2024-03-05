@@ -87,12 +87,50 @@ function ∫x²dP(d::Normal, a, b)
     int 
 end
 
+function ∫x²dP(d::TDist, a, b)
+    ν = d.ν
+    if ν != 5 
+        throw(ArgumentError("Only implemented for TDist(5) currently"))
+    end
+
+    if a >= 0 && isinf(a) 
+        throw(ArgumentError("a cannot be +Inf"))
+    end
+    if b <= 0 && isinf(b) 
+        throw(ArgumentError("b cannot be -Inf"))
+    end
+    
+    function primitive(t)
+        sqrt5 = sqrt(5.0)
+        term1 = (5.0 * t * (t^2 - 5)) / ((t^2 + 5)^2)
+        term2 = sqrt5 * atan(t / sqrt5)
+        result = (sqrt5 * (term1 + term2)) / (3 * π)
+        return result
+    end
+
+    lhs = isinf(a) ? Float64(-5/6) : primitive(a)
+    rhs = isinf(b) ? Float64(5/6) : primitive(b)
+    rhs - lhs
+end
+
 function ∫x²dP(d::Empirikos.Folded, a, b)
     if a < 0 || b < 0 || a > b
         throw(ArgumentError("Only implemented for 0<a<b"))
     end 
     2 * ∫x²dP(Empirikos.unfold(d), a, b)
 end
+
+function ∫x²dP(d::Distributions.LocationScale, a, b)
+    if d.μ != 0 
+        throw(ArgumentError("Only implemented under zero centering currently"))
+    end
+
+    σ = d.σ 
+
+    abs2(σ) * ∫x²dP(d.ρ, a/σ, b/σ)
+end
+
+
 
 function StatsBase.var(pt::PolyaTree)
     J = pt.pt.J
@@ -119,6 +157,7 @@ struct IIDSample{V} <: AbstractIIDSample{V}
     Z::V
 end
 
+iid_samples(samples::IIDSample) = samples.Z
 StatsBase.nobs(IIDSample) = length(IIDSample.Z)
 
 Base.@kwdef mutable struct ConfigurationSample{V, S, T} <: AbstractIIDSample{V}
@@ -127,23 +166,30 @@ Base.@kwdef mutable struct ConfigurationSample{V, S, T} <: AbstractIIDSample{V}
     Z̄::T = zero(Float64)
 end
 
+function ConfigurationSample(iid_sample::IIDSample)
+    Z̄ = mean(iid_sample.Z)
+    configuration = iid_sample.Z .- Z̄
+    ConfigurationSample(configuration=configuration)
+end
+
 StatsBase.nobs(config::ConfigurationSample) = length(config.configuration)
-
-IIDSample(config::ConfigurationSample, z̄) = IIDSample(config.configuration .+ z̄)
-IIDSample(config::ConfigurationSample) = IIDSample(config.configuration .+ zconfig.Z̄)
+iid_samples(config::ConfigurationSample) = config.configuration .+ config.Z̄
 
 
-function Distributions.logpdf(d::Distribution, iid_sample::IIDSample)
-    sum(Distributions.logpdf.(d, iid_sample.Z))
+
+function Distributions.logpdf(d::Distribution, iid_sample::AbstractIIDSample)
+    sum(Distributions.logpdf.(d, iid_samples(iid_sample)))
 end 
 
-function Distributions.pdf(d::Distribution, iid_sample::IIDSample)
-    prod(exp.(ULogarithmic, Distributions.logpdf.(d, iid_sample.Z)))
+
+function Distributions.pdf(d::Distribution, iid_sample::AbstractIIDSample)
+    prod(exp.(ULogarithmic, Distributions.logpdf.(d, iid_samples(iid_sample))))
 end 
 
 
 function Empirikos.posterior(sample::AbstractIIDSample, model::PolyaTreeDistribution)
-    offset_post = model.symmetrized ? _ns(model, abs.(sample.Z)) : _ns(model, sample.Z)
+    resp = iid_samples(sample)
+    offset_post = model.symmetrized ? _ns(model, abs.(resp)) : _ns(model, resp)
     offset_old = model.offsets
     post_model = @set model.offsets = offset_post .+ offset_old
     post_model
@@ -155,7 +201,26 @@ function zero_offsets!(model::PolyaTreeDistribution)
 end
 
 function posterior!(sample::AbstractIIDSample, model::PolyaTreeDistribution)
-    offset_post = model.symmetrized ? _ns(model, abs.(sample.Z)) : _ns(model, sample.Z)
+    resp = iid_samples(sample)
+    offset_post = model.symmetrized ? _ns(model, abs.(resp)) : _ns(model, resp)
     model.offsets .+= offset_post
     model
+end
+
+function posterior!(samples::AbstractVector{<:AbstractIIDSample}, model::PolyaTreeDistribution)
+    for sample in samples
+        posterior!(sample, model)
+    end
+end
+
+struct VarianceIIDSample{D, V<:AbstractIIDSample} <: Empirikos.EBayesSample{V}
+    iidsample::V
+    base::D 
+end
+
+function Empirikos.likelihood_distribution(Z::VarianceIIDSample, param)
+    sqrt(param) * Z.base
+end
+function StatsBase.response(Z::VarianceIIDSample)
+    Z.iidsample
 end

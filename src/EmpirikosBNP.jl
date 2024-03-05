@@ -6,14 +6,15 @@ using Distributions
 import Distributions:pdf, logpdf
 
 using Empirikos
-import Empirikos:posterior
-
-
-using Random
+import Empirikos:posterior, likelihood_distribution
 using LogarithmicNumbers
+
+
+using ProgressMeter
+using Random
 using Setfield
 using StatsBase
-import StatsBase: var, nobs
+import StatsBase: var, nobs, sample, sample!
 
 
 

@@ -6,11 +6,22 @@ Base.@kwdef struct AverageImputationProposal{T}  <: AbstractMHProposal
     base::T = Normal() 
 end
 
+function proposal_dist(avg::AverageImputationProposal, config_sample, σ²)
+    K = nobs(config_sample)
+    avg.base * sqrt(σ²) / sqrt(K) 
+end
+
 Base.@kwdef struct VarianceProposal{D, T}  <: AbstractMHProposal
     mh_steps::Int = 3 
     default_dist::D 
-    dof::T = Inf
+    dof::T = 100
 end
+
+function proposal_dist(varprop::VarianceProposal)
+    marginalize(ScaledChiSquareSample(nothing, varprop.dof), varprop.default_dist)
+end
+
+
 
 mutable struct VariancePolyaSampler{D,T, R, I, V, S}
     σ²_prior::D
@@ -24,59 +35,32 @@ end
 
 function VariancePolyaSampler(data; base_polya)
     # assuming data is a vector of ConfigurationSample
-    Ss = var.(EmpirikosBNP.iid_samples.(data))
-    σ²_prior = EmpirikosBNP.quantiles_to_invχ²(extrema(Ss)...)
+    Ss = ScaledChiSquareSample.(data)
+    
+    σ²_prior = quantiles_to_invχ²(extrema(response.(Ss))...)
     realized_pt = rand(base_polya)
     realized_pt = realized_pt / std(realized_pt)
 
-    
+    Ss_merge = merge_samples(Ss)
+
+    imputation_proposal = AverageImputationProposal(
+        base = TDist(8) / std(TDist(8))
+    )
+    variance_proposal = VarianceProposal(
+        default_dist = Empirikos.posterior(Ss_merge, σ²_prior),
+        dof = 30,
+    )
+
     VariancePolyaSampler(
         σ²_prior,
         base_polya,
-        AverageImputationProposal(),
-        VarianceProposal(3, σ²_prior, Inf),
+        imputation_proposal,
+        variance_proposal,
         realized_pt,
-        σ²_prior,
+        response(Ss_merge),
         data
     )
 end
-
-
-function proposal(prop::AverageImputationProposal, config_sample)
-    K = nobs(config_sample)
-    d_base = isinf(prop.dof) ? Normal() : TDis 
-
-    proposal_d = Normal() * sqrt(var_pt) / sqrt(K) 
-end
-
-
-
-function mh_step(pt, config_sample, curr_z; steps=5)
-
-
-    for _ in Base.OneTo(steps)
-        prop_z = rand(proposal_d)
-        prop_ratio = (conditional_pdf(pt, config_sample, prop_z) *  pdf(proposal_d, curr_z)) /
-                 (conditional_pdf(pt, config_sample, curr_z) * pdf(proposal_d, prop_z))
-        if rand() < prop_ratio
-            curr_z = prop_z
-        end
-    end  
-    curr_z
-
-    logα = logdensity(model, candidate) - logdensity(model, transition_prev) +
-        logratio_proposal_density(sampler, transition_prev, candidate)
-
-    # Decide whether to return the previous params or the new one.
-    transition = if -Random.randexp(rng) < logα
-    end 
-end
-
-
-
-
-
-
 
 
 
@@ -84,40 +68,92 @@ end
 function StatsBase.sample!(vp::VariancePolyaSampler)
     sample_posterior_polya_tree!(vp) # normalizes to variance 1?
     sample_variance!(vp)
-    impute_zbar!(vp)
+    vp.realized_pt = vp.realized_pt * sqrt(vp.σ²)
+    for z in vp.data
+        impute_zbar!(vp, z)
+    end
 end
 
 
 function sample_posterior_polya_tree!(vp::VariancePolyaSampler)
-   # TODO: rescale suitably
+   σinv = 1/sqrt(vp.σ²)
    zero_offsets!(vp.base_polya)
-   posterior!(vp.data, vp.base_polya)
+   # revisit the following line ..
+   posterior!(vp.data, vp.base_polya, σinv)
    realized_pt = rand(vp.base_polya)
    vp.realized_pt = realized_pt / std(realized_pt)
 end
 
-#function StatsBase.fit!(gc::AbstractNealAlgorithm, progress=true;
-#              samples=5000, burnin=samples÷10)
+function sample_variance!(vp)
+    transition_prev = vp.σ²
+    proposal_d = proposal_dist(vp.variance_mh)
+    steps = vp.variance_mh.mh_steps
 
-#    assignments = Matrix{Int}(undef, length(gc.data), samples)
-#    components = Vector{typeof(gc.components)}()
-#    log_αs = Vector{Float64}(undef, samples)
+    var_iid = VarianceIIDSample(IIDSample(vp.data), vp.realized_pt)
 
-#    @showprogress (progress ? 1 : Inf) "Gibbs sampling burnin" for _ in 1:burnin
-#        sample!(gc)
-#    end
+    for _ in Base.OneTo(steps)
+        candidate = rand(proposal_d)
 
-#    @showprogress (progress ? 1 : Inf) "Gibbs sampling" for i in 1:samples
-#        sample!(gc)
-#        assignments[:,i] .= gc.assignments
-#        push!(components, copy(gc.components))
-#        log_αs[i] = gc.logα
-##    end
-#    NealAlgorithmSamples(gc, assignments, components, log_αs)
-#end
+        logα = logpdf(proposal_d, transition_prev) -  
+               logpdf(proposal_d, candidate) +
+               loglikelihood(var_iid, candidate) -
+               loglikelihood(var_iid, transition_prev) + 
+               logpdf(vp.σ²_prior, candidate) -
+               logpdf(vp.σ²_prior, transition_prev)
+        
+        if -Random.randexp() < logα
+            transition_prev = candidate 
+        end 
+    end 
+    vp.σ² = transition_prev
+    transition_prev
+end
 
-#mutable struct VariancePolyaSamples
-#    σ²::Vector{Float64}
-#    base_polya_σ²::Vector{Float64}
-#    Z̄_mat::Matrix{Float64}
-#end
+function impute_zbar!(vp, config_sample::ConfigurationSample)
+    transition_prev = config_sample.Z̄
+    realized_pt = vp.realized_pt
+
+    proposal_d = proposal_dist(vp.imputation_mh, config_sample, vp.σ²) 
+    steps = vp.imputation_mh.mh_steps
+
+    #var_iid = VarianceIIDSample(IIDSample(vp.data), vp.realized_pt)
+
+    for _ in Base.OneTo(steps)
+        candidate = rand(proposal_d)
+
+        logα = logpdf(proposal_d, transition_prev) -  
+               logpdf(proposal_d, candidate) +
+               logpdf(realized_pt, config_sample, candidate) -
+               logpdf(realized_pt, config_sample, transition_prev)
+
+        if -Random.randexp() < logα
+            transition_prev = candidate 
+        end 
+    end 
+    config_sample.Z̄ = transition_prev
+    transition_prev
+end 
+
+mutable struct VariancePolyaSamples
+    σ²::Vector{Float64}
+    Z̄_mat::Matrix{Float64}
+end
+
+function StatsBase.fit!(vp::VariancePolyaSampler, progress=true;
+            samples=5000, burnin=samples÷10)
+
+    Z̄_mat = Matrix{Float64}(undef, length(vp.data), samples)
+    σ²_vec = Vector{Float64}(undef, samples)
+
+    @showprogress (progress ? 1 : Inf) "Gibbs sampling burnin" for _ in 1:burnin
+        sample!(vp)
+    end
+
+    @showprogress (progress ? 1 : Inf) "Gibbs sampling" for i in 1:samples
+        sample!(vp)
+        Z̄_mat[:,i] .= getproperty.(vp.data, :Z̄)
+        σ²_vec[i] = vp.σ²
+    end
+    VariancePolyaSamples(σ²_vec, Z̄_mat)
+end
+

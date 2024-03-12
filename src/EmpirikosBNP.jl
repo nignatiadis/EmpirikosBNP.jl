@@ -1,6 +1,6 @@
 module EmpirikosBNP
 
-import Base:rand, empty
+import Base:rand, empty, *, /
 
 using Distributions
 import Distributions:pdf, logpdf
@@ -15,7 +15,7 @@ using Random
 using Roots
 using Setfield
 using StatsBase
-import StatsBase: var, nobs, sample, sample!
+import StatsBase: var, nobs, sample, sample!, fit!
 
 
 include("defaults.jl")

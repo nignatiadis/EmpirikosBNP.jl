@@ -30,6 +30,30 @@ function _prob(pt::PolyaTree, x)
     mapreduce( ((j, θ),) -> θ[kfun(pt.pt, x, j)], (a,b) -> a * b, enumerate(θs) )
 end
 
+function _log_prob_old(pt::PolyaTree, x)
+    θs = pt.θs
+    sum(log.(θ[kfun(pt.pt, x, j)]) for (j, θ) in enumerate(θs))
+end
+
+function _log_prob(pt::PolyaTree, x)
+    θs = pt.θs
+    log_prob = 0.0
+    for (j, θ) in enumerate(θs)
+        index = kfun(pt.pt, x, j)
+        log_prob += log(θ[index])
+    end
+    log_prob
+end
+
+function Distributions.logpdf(pt::PolyaTree, x::Real)
+    symmetrized = pt.pt.symmetrized
+    J = pt.pt.J
+    base = pt.pt.base
+    x = symmetrized ? abs(x) : x
+    log_f = _log_prob(pt, x) + Distributions.logpdf(base, x) + J * log(2)
+    symmetrized ? log_f - log(2) : log_f
+end
+
 function Distributions.pdf(pt::PolyaTree, x::Real)
     symmetrized = pt.pt.symmetrized
     J = pt.pt.J
@@ -39,9 +63,9 @@ function Distributions.pdf(pt::PolyaTree, x::Real)
     symmetrized ? f/2 : f
 end
 
-function Distributions.logpdf(pt::PolyaTree, x::Real)
-   log(pdf(pt, x))
-end
+#function Distributions.logpdf(pt::PolyaTree, x::Real)
+#   log(pdf(pt, x))
+#end
 
 function Base.rand(rng::AbstractRNG, d::PolyaTreeDistribution)
     n = d.offsets
@@ -189,7 +213,9 @@ end
 ScaledChiSquareSample(config::ConfigurationSample) = config.S²
 
 StatsBase.nobs(config::ConfigurationSample) = length(config.configuration)
-iid_samples(config::ConfigurationSample) = config.configuration .+ config.Z̄
+
+iid_samples(config::ConfigurationSample, z̄) = config.configuration .+ z̄
+iid_samples(config::ConfigurationSample) = iid_samples(config, config.Z̄)
 
 
 
@@ -197,10 +223,15 @@ function Distributions.logpdf(d::Distribution, iid_sample::AbstractIIDSample)
     sum(Distributions.logpdf.(d, iid_samples(iid_sample)))
 end 
 
-
-function Distributions.pdf(d::Distribution, iid_sample::AbstractIIDSample)
-    prod(exp.(ULogarithmic, Distributions.logpdf.(d, iid_samples(iid_sample))))
+function Distributions.logpdf(d::Distribution, iid_sample::ConfigurationSample, z̄)
+    sum(Distributions.logpdf.(d, iid_samples(iid_sample, z̄)))
 end 
+
+
+
+#function Distributions.pdf(d::Distribution, iid_sample::AbstractIIDSample)
+#    prod(exp.(ULogarithmic, Distributions.logpdf.(d, iid_samples(iid_sample))))
+#end 
 
 
 function Empirikos.posterior(sample::AbstractIIDSample, model::PolyaTreeDistribution)
@@ -216,20 +247,20 @@ function zero_offsets!(model::PolyaTreeDistribution)
     model
 end
 
-function posterior!(sample::AbstractIIDSample, model::PolyaTreeDistribution)
+function posterior!(sample::AbstractIIDSample, model::PolyaTreeDistribution, σ = 1.0)
     resp = iid_samples(sample)
-    offset_post = model.symmetrized ? _ns(model, abs.(resp)) : _ns(model, resp)
+    offset_post = model.symmetrized ? _ns(model, abs.(resp) .* σ) : _ns(model, resp .* σ)
     model.offsets .+= offset_post
     model
 end
 
-function posterior!(samples::AbstractVector{<:AbstractIIDSample}, model::PolyaTreeDistribution)
+function posterior!(samples::AbstractVector{<:AbstractIIDSample}, model::PolyaTreeDistribution, σ=1.0)
     for sample in samples
-        posterior!(sample, model)
+        posterior!(sample, model, σ)
     end
 end
 
-struct VarianceIIDSample{D, V<:AbstractIIDSample} <: Empirikos.EBayesSample{V}
+struct VarianceIIDSample{D, V} <: Empirikos.EBayesSample{V}
     iidsample::V
     base::D 
 end
@@ -239,4 +270,16 @@ function Empirikos.likelihood_distribution(Z::VarianceIIDSample, param)
 end
 function StatsBase.response(Z::VarianceIIDSample)
     Z.iidsample
+end
+
+
+struct RescaledIIDSample{V, U <: AbstractIIDSample{V}, R} <: AbstractIIDSample{V}
+    iidsample::U
+    scale::R
+end
+
+iid_samples(Z::RescaledIIDSample) = iid_samples(Z.iidsample) .* Z.scale
+
+function *(Z::AbstractIIDSample, σ::Real)
+    RescaledIIDSample(Z, σ)
 end

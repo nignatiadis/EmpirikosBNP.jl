@@ -23,21 +23,18 @@ end
 
 
 
-mutable struct VariancePolyaSampler{D,T, R, I, V, S}
+mutable struct VariancePolyaSampler{D, T, R, I, V, S, U}
     σ²_prior::D
     base_polya::T
     imputation_mh::I
     variance_mh::V
     realized_pt::R
-    σ²::Float64
+    σ²::U # could be vector of σ^2
     data::Vector{S} # config_samples 
 end
 
-function VariancePolyaSampler(data; base_polya)
-    # assuming data is a vector of ConfigurationSample
-    Ss = ScaledChiSquareSample.(data)
-    
-    σ²_prior = quantiles_to_invχ²(extrema(response.(Ss))...)
+function VariancePolyaSampler(data; base_polya, σ²_prior=_default_prior(data))
+    # assuming data is a vector of ConfigurationSample    
     realized_pt = rand(base_polya)
     realized_pt = realized_pt / std(realized_pt)
 
@@ -75,8 +72,8 @@ function StatsBase.sample!(vp::VariancePolyaSampler)
 end
 
 
-function sample_posterior_polya_tree!(vp::VariancePolyaSampler)
-   σinv = 1/sqrt(vp.σ²)
+function sample_posterior_polya_tree!(vp::VariancePolyaSampler, σ² = vp.σ²)
+   σinv = 1 ./ sqrt.(σ²)
    zero_offsets!(vp.base_polya)
    # revisit the following line ..
    posterior!(vp.data, vp.base_polya, σinv)

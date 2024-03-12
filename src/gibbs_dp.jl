@@ -246,7 +246,7 @@ function StatsBase.sample!(gc::NealAlgorithm8, i::Int)
 end
 
 
-mutable struct NealAlgorithm8Polya{D, T, S, W <: AbstractWrappedEBSample{S},F, G, P, I, V,R}  <: AbstractNealAlgorithm
+mutable struct NealAlgorithm8Polya{D, T, S, W <: AbstractWrappedEBSample,F, V}  <: AbstractNealAlgorithm
     # keeps track of the variances
     prior::D
     α_dist::T
@@ -257,8 +257,58 @@ mutable struct NealAlgorithm8Polya{D, T, S, W <: AbstractWrappedEBSample{S},F, G
     data::Vector{S}
     m::Int64 # for MH refresh
     param_cache::Vector{F} 
-    base_polya::P
-    imputation_mh::I
-    variance_mh::V
-    realized_pt::R
+    vp::V
+end
+
+function NealAlgorithm8Polya(
+    Ss::AbstractVector;
+    base_polya,
+    m = 10,
+    α_dist =  Gamma(0.001,100.0),
+    prior = _default_prior(Ss)
+    ) 
+    all_Ss = wrap(Ss)
+    empty_Ss = empty(all_Ss)
+    vp = VariancePolyaSampler(Ss; base_polya, σ²_prior=prior)
+    
+    NealAlgorithm8Polya(prior,
+             α_dist,
+             1.0,
+             [all_Ss, empty_Ss],
+             [2],
+             ones(Int, length(Ss)),
+             Ss,
+             m, 
+             [1.0 for _ in 1:m],
+             vp
+             )
+end
+
+
+
+function StatsBase.sample!(gc::NealAlgorithm8Polya)
+    vp = gc.vp 
+    σ² = 
+    sample_posterior_polya_tree!(vp, )
+
+    #function StatsBase.sample!(vp::VariancePolyaSampler)
+    #    sample_posterior_polya_tree!(vp) # normalizes to variance 1?
+    #    sample_variance!(vp)
+    #    vp.realized_pt = vp.realized_pt * sqrt(vp.σ²)
+    #    for z in vp.data
+    #        impute_zbar!(vp, z)
+    #    end
+    #end
+
+    for i in 1:length(gc.data)
+        sample!(gc, i) # update cluster assignment
+    end
+    if track_parameters(gc)
+        for i in 1:length(gc.components)
+            isempty(gc.components[i]) && sample_component_param!(gc, i) # update parameter assignment
+        end 
+    end
+    sample_α!(gc)   # update concentration parameter α 
+    # remark: for the Polya Tree algorithm, also need to update the Polya Tree & Zs.
+    return gc
 end

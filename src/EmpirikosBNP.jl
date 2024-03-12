@@ -18,9 +18,9 @@ using StatsBase
 import StatsBase: var, nobs, sample, sample!, fit!
 
 
-include("defaults.jl")
-include("merge.jl")
 include("polya.jl")
+include("merge.jl")
+include("defaults.jl")
 include("basic_mh.jl")
 include("gibbs_dp.jl")
 

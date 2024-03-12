@@ -3,6 +3,10 @@ function _default_prior(Ss::AbstractVector{<:ScaledChiSquareSample})
     quantiles_to_invχ²(_min, _max)
 end
 
+function _default_prior(Ss::AbstractVector{<:ConfigurationSample})
+    _default_prior(getproperty.(Ss, :S²))
+end
+
 function quantiles_to_invχ²(lower_quantile, upper_quantile)
     function f(σ²)
         myf(ν) = quantile(Empirikos.InverseScaledChiSquare(σ², ν), 0.99) - upper_quantile

@@ -26,18 +26,18 @@ struct WrappedEBSample{T,P} <: AbstractWrappedEBSample{T}
     param::P #debatable
 end
 
-function wrap(samples::AbstractVector{<:ScaledChiSquareSample})
+function wrap(samples::AbstractVector)
     n = length(samples)
     ebz = merge_samples(samples)
     WrappedEBSample(ebz, n, 1.0)
 end
 
-function sub(orig::WrappedEBSample{<:ScaledChiSquareSample}, rm::ScaledChiSquareSample)
+function sub(orig::WrappedEBSample, rm)
     ebz = sub(orig.sample, rm)
     WrappedEBSample(ebz, orig.n - 1, orig.param)
 end
 
-function add(orig::WrappedEBSample{<:ScaledChiSquareSample}, rm::ScaledChiSquareSample)
+function add(orig::WrappedEBSample, rm)
     ebz = add(orig.sample, rm)
     WrappedEBSample(ebz, orig.n + 1, orig.param)
 end
@@ -49,6 +49,30 @@ function Base.empty(S::WrappedEBSample)
     S = @set S.sample = empty(S.sample)
     S = @set S.n = 0
     S
+end
+
+## AbstractIIDSample merging
+
+function merge_samples(Ss::AbstractVector{<:AbstractIIDSample})
+    IIDSample(view(Ss, collect(1:length(Ss)))) 
+end
+
+# actually sub!
+function sub(orig::IIDSample{<:SubArray}, i)
+    idx = orig.Z.indices[1]
+    deleteat!(idx , findfirst(==(i), idx))
+    orig
+end
+
+function add(orig::IIDSample{<:SubArray}, i)
+    idx = orig.Z.indices[1]
+    push!(idx, i)
+    orig
+end
+
+function Base.empty(orig::IIDSample{<:SubArray})
+    newview = view(orig.Z.parent, empty(orig.Z.indices[1]))
+    IIDSample(newview)
 end
 
 

@@ -15,6 +15,9 @@ function StatsBase.sample!(gc::AbstractNealAlgorithm)
     end
     sample_α!(gc)   # update concentration parameter α 
     # remark: for the Polya Tree algorithm, also need to update the Polya Tree & Zs.
+    if length(gc.empties) > 100
+        cleanup_components!(gc)
+    end
     return gc
 end
 
@@ -33,11 +36,18 @@ end
 
 track_parameters(::NealAlgorithm2) = true 
 
-#function cleanup_components!(gc)
-#    idx_nonempty = findall(!isempty, gc.components)
-#    recode = collect(1:length(idx_nonempty))
-    #gc.assignments = 
-#end
+# basically: 
+# recode
+function cleanup_components!(gc)
+    idx_nonempty = findall(!isempty, gc.components)
+    idx_empty = findfirst(isempty, gc.components)
+    empty_comp = gc.components[idx_empty]
+    recode_dict = Dict(idx_nonempty .=> 1:length(idx_nonempty))
+    gc.assignments .= getindex.(Ref(recode_dict), gc.assignments)
+    gc.components = gc.components[idx_nonempty]
+    push!(gc.components, empty_comp)
+    gc.empties = [length(gc.components)]
+end
 
 function NealAlgorithm2(
     Ss::AbstractVector;
@@ -288,7 +298,7 @@ end
 
 function StatsBase.sample!(gc::NealAlgorithm8Polya)
     vp = gc.vp 
-    σ² = 
+    #σ² = 
     sample_posterior_polya_tree!(vp, )
 
     #function StatsBase.sample!(vp::VariancePolyaSampler)
@@ -312,3 +322,4 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya)
     # remark: for the Polya Tree algorithm, also need to update the Polya Tree & Zs.
     return gc
 end
+

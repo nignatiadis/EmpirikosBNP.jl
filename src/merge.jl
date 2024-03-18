@@ -54,25 +54,25 @@ end
 ## AbstractIIDSample merging
 
 function merge_samples(Ss::AbstractVector{<:AbstractIIDSample})
-    IIDSample(view(Ss, collect(1:length(Ss)))) 
+    IIDSample(Ss)
 end
+
+
 
 # actually sub!
-function sub(orig::IIDSample{<:SubArray}, i)
-    idx = orig.Z.indices[1]
-    deleteat!(idx , findfirst(==(i), idx))
+function sub(orig::IIDSample{<:AbstractVector}, rm)
+    idx_delete = findfirst(==(rm), orig.Z)
+    deleteat!(orig.Z , idx_delete)
     orig
 end
 
-function add(orig::IIDSample{<:SubArray}, i)
-    idx = orig.Z.indices[1]
-    push!(idx, i)
+function add(orig::IIDSample{<:AbstractVector}, rm)
+    push!(orig.Z, rm)
     orig
 end
 
-function Base.empty(orig::IIDSample{<:SubArray})
-    newview = view(orig.Z.parent, empty(orig.Z.indices[1]))
-    IIDSample(newview)
+function Base.empty(orig::IIDSample{<:AbstractVector})
+    IIDSample(empty(orig.Z))
 end
 
 

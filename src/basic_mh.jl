@@ -38,7 +38,7 @@ function VariancePolyaSampler(data; base_polya, σ²_prior=_default_prior(data))
     realized_pt = rand(base_polya)
     realized_pt = realized_pt / std(realized_pt)
 
-    Ss_merge = merge_samples(Ss)
+    Ss_merge = merge_samples(data)
 
     imputation_proposal = AverageImputationProposal(
         base = TDist(8) / std(TDist(8))
@@ -81,12 +81,12 @@ function sample_posterior_polya_tree!(vp::VariancePolyaSampler, σ² = vp.σ²)
    vp.realized_pt = realized_pt / std(realized_pt)
 end
 
-function sample_variance!(vp)
+function sample_variance!(vp, data=vp.data)
     transition_prev = vp.σ²
     proposal_d = proposal_dist(vp.variance_mh)
     steps = vp.variance_mh.mh_steps
 
-    var_iid = VarianceIIDSample(IIDSample(vp.data), vp.realized_pt)
+    var_iid = VarianceIIDSample(IIDSample(data), vp.realized_pt)
 
     for _ in Base.OneTo(steps)
         candidate = rand(proposal_d)

@@ -7,7 +7,7 @@ Base.@kwdef struct PolyaTreeDistribution{D,F,O} <: Distribution{DistributionVari
     J::Int64 = 7
     base::D
     α::Float64 = 10.0
-    ρ::F = (j) -> j^2
+    ρ::F = (j,k) -> j^2
     offsets::O = _ns(base, J, Int[])
     median_centered::Bool = true
     symmetrized::Bool = false
@@ -74,7 +74,7 @@ function Base.rand(rng::AbstractRNG, d::PolyaTreeDistribution)
     θs = map(layer -> begin
         j, nj = layer
         m = reshape(nj, 2, 2^(j-1))
-        θl = map(i -> ULogarithmic.(rand(rng, Beta(α * ρ(j) .+ m[:,i]...))), 1:2^(j-1))
+        θl = map(i -> ULogarithmic.(rand(rng, Beta(α * ρ(j,i) .+ m[:,i]...))), 1:2^(j-1))
         mapreduce(θ -> [θ, one(θ) - θ], vcat, θl)
         end, enumerate(n))
     if d.median_centered

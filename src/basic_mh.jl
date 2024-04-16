@@ -41,7 +41,7 @@ function VariancePolyaSampler(data; base_polya, σ²_prior=_default_prior(data))
     Ss_merge = merge_samples(data)
 
     imputation_proposal = AverageImputationProposal(
-        base = TDist(8) / std(TDist(8))
+        base = TDist(50) / std(TDist(50))
     )
     variance_proposal = VarianceProposal(
         default_dist = Empirikos.posterior(Ss_merge, σ²_prior),

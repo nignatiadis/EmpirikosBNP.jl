@@ -23,6 +23,7 @@ include("merge.jl")
 include("defaults.jl")
 include("basic_mh.jl")
 include("gibbs_dp.jl")
+include("gibbs_polya.jl")
 
 
 export PolyaTreeDistribution

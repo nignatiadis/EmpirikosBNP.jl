@@ -1,6 +1,6 @@
 module EmpirikosBNP
 
-import Base:rand, empty, *, /
+import Base:show, rand, empty, *, /
 
 using Distributions
 import Distributions:pdf, logpdf

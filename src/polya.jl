@@ -3,7 +3,7 @@ abstract type DistributionVariate <: Distributions.VariateForm end
 kfun(base::Distribution, x::AbstractFloat, j::Int) = min(floor(Int, 2^j * cdf(base, x)) + 1, 2^j)
 _ns(base::Distribution, J::Int, x::AbstractVector) = map(j -> counts(kfun.(base, x, j), 1:2^j), 1:J)
 
-Base.@kwdef struct PolyaTreeDistribution{D,F,O} <: Distribution{DistributionVariate,Continuous}
+Base.@kwdef struct PolyaTreeDistribution{D,F,O,V} <: Distribution{DistributionVariate,Continuous}
     J::Int64 = 7
     base::D
     α::Float64 = 10.0
@@ -11,14 +11,30 @@ Base.@kwdef struct PolyaTreeDistribution{D,F,O} <: Distribution{DistributionVari
     offsets::O = _ns(base, J, Int[])
     median_centered::Bool = true
     symmetrized::Bool = false
+    stored_splits::V =  map(j -> quantile.(Ref(base), (1:(2^j-1)) ./ 2^j), 1:J)
+end
+
+function Base.show(io::IO, d::PolyaTreeDistribution)
+    print(io, "PolyaTreeDistribution(")
+    print(io, "$(d.base), ")
+    print(io, "J = $(d.J), ")
+    print(io, "α = $(d.α), ")
+    print(io, "median_centered = $(d.median_centered), ")
+    print(io, "symmetrized = $(d.symmetrized)")
+    print(io, ")")
 end
 
 function _grid_points(polya::PolyaTreeDistribution) 
     quantile.(polya.base, (1:(2^polya.J-1)) ./ 2^polya.J)
 end 
 
-kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int) = kfun(polya.base, x, j)
-_ns(polya::PolyaTreeDistribution, x::AbstractVector) = _ns(polya.base, polya.J, x)
+function kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int)
+    searchsortedlast(polya.stored_splits[j], x) + 1
+end 
+
+function _ns(polya::PolyaTreeDistribution, x::AbstractVector) 
+    map(j -> counts(kfun.(Ref(polya), x, j), 1:2^j), 1:polya.J)
+end
 
 struct PolyaTree{P,T} <: Distribution{Univariate, Continuous}
     pt::P

@@ -81,3 +81,56 @@ var_iid_sample = EmpirikosBNP.VarianceIIDSample(EmpirikosBNP.IIDSample(zs_rand),
 logliks_var_iid_sample = loglikelihood.(var_iid_sample, var_list)
 
 @test argmax(logliks_var_iid_sample) == argmax(logliks_chisq)
+
+
+#kfun(base::Distribution, x::AbstractFloat, j::Int) = min(floor(Int, 2^j * cdf(base, x)) + 1, 2^j)
+#_ns(base::Distribution, J::Int, x::AbstractVector) = map(j -> counts(kfun.(base, x, j), 1:2^j), 1:J)
+
+
+#kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int) = kfun(polya.base, x, j)
+#_ns(polya::PolyaTreeDistribution, x::AbstractVector) = _ns(polya.base, polya.J, x)
+
+pt = PolyaTreeDistribution(base=Empirikos.fold(TDist(8)), 
+    J=5, α=10.0, 
+    symmetrized=true,
+    median_centered=false)
+
+
+@test EmpirikosBNP.kfun(pt.base, 0.0, 1) == 1#1
+@test EmpirikosBNP.kfun(pt.base, 0.8, 1) == 2 #2
+@test EmpirikosBNP.kfun(pt.base, quantile(pt.base, 0.5), 1) == 2
+@test EmpirikosBNP.kfun(pt.base, Inf, 1) == 2
+
+
+@test EmpirikosBNP.kfun(pt, 0.0, 1) == 1#1
+@test EmpirikosBNP.kfun(pt, 0.8, 1) == 2 #2
+@test EmpirikosBNP.kfun(pt, quantile(pt.base, 0.5), 1) == 2
+@test EmpirikosBNP.kfun(pt, Inf, 1) == 2
+
+
+
+@test EmpirikosBNP.kfun(pt.base, quantile(pt.base, 0.5), 2) == 3
+@test EmpirikosBNP.kfun(pt.base, quantile(pt.base, 0.25), 2) == 2
+@test EmpirikosBNP.kfun(pt.base, quantile(pt.base, 0.24), 2) == 1
+@test EmpirikosBNP.kfun(pt.base, quantile(pt.base, 0.75), 2) == 4
+@test EmpirikosBNP.kfun(pt.base, Inf, 2) == 4
+
+@test EmpirikosBNP.kfun(pt, quantile(pt.base, 0.5), 2) == 3
+@test EmpirikosBNP.kfun(pt, quantile(pt.base, 0.25), 2) == 2
+@test EmpirikosBNP.kfun(pt, quantile(pt.base, 0.24), 2) == 1
+@test EmpirikosBNP.kfun(pt, quantile(pt.base, 0.75), 2) == 4
+@test EmpirikosBNP.kfun(pt, Inf, 2) == 4
+
+
+
+Zs = randexp(1000)
+
+ns1 = EmpirikosBNP._ns(pt.base, 5, Zs)
+ns2 = EmpirikosBNP._ns(pt, Zs)
+
+@test ns1 == ns2
+
+
+@btime EmpirikosBNP._ns($(pt.base), $(5), $(Zs))
+@btime EmpirikosBNP._ns($(pt), $(Zs))
+

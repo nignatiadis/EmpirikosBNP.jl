@@ -82,6 +82,8 @@ function _pval_fun(samples::NealAlgorithmSamples, mu_hats)
     end
     mean(pval_mat, dims=2) |> vec
 end 
+
+
 assignments(gf::NealAlgorithmSamples) = gf.assignments
 
 

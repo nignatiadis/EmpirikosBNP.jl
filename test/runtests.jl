@@ -90,7 +90,7 @@ logliks_var_iid_sample = loglikelihood.(var_iid_sample, var_list)
 #kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int) = kfun(polya.base, x, j)
 #_ns(polya::PolyaTreeDistribution, x::AbstractVector) = _ns(polya.base, polya.J, x)
 
-pt = PolyaTreeDistribution(base=Empirikos.fold(TDist(8)), 
+pt = PolyaTreeDistribution(base=Empirikos.fold(TDist(5)), 
     J=5, α=10.0, 
     symmetrized=true,
     median_centered=false)
@@ -131,6 +131,6 @@ ns2 = EmpirikosBNP._ns(pt, Zs)
 @test ns1 == ns2
 
 
-@btime EmpirikosBNP._ns($(pt.base), $(5), $(Zs))
-@btime EmpirikosBNP._ns($(pt), $(Zs))
+#@btime EmpirikosBNP._ns($(pt.base), $(5), $(Zs))
+#@btime EmpirikosBNP._ns($(pt), $(Zs))
 

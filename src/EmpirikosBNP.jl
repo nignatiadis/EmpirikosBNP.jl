@@ -17,6 +17,7 @@ using Setfield
 using StatsBase
 import StatsBase: var, nobs, sample, sample!, fit!
 
+using QuadGK
 
 include("polya.jl")
 include("merge.jl")

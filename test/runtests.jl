@@ -134,3 +134,26 @@ ns2 = EmpirikosBNP._ns(pt, Zs)
 #@btime EmpirikosBNP._ns($(pt.base), $(5), $(Zs))
 #@btime EmpirikosBNP._ns($(pt), $(Zs))
 
+
+
+# Test p-value computation 
+
+my_config_sample = EmpirikosBNP.ConfigurationSample(EmpirikosBNP.IIDSample([12.0340292912603, 3.990445548408448, -3.6786150785477068, 14.289772526102656, -14.826286689345718, 7.246581950355288, 10.141984086148856, -14.761417934550533, 17.590823315956502, -8.30338731871067, -8.856670510285603, -14.867259186791806]))
+my_mu_hat = -5.09987303940544
+
+_p1 = EmpirikosBNP._pval_custom(my_config_sample, my_mu_hat, 1.0, Uniform(-20,20); rtol=0.0001)
+_p2 = EmpirikosBNP._pval_custom(my_config_sample, my_mu_hat, std(Uniform(-20,20)), Uniform(-20,20) / std( Uniform(-20,20) ); rtol=0.0001)
+
+@test _p1 ≈ _p2
+
+# We can also compute the p-value directly here by noting that the conditional density of Z_bar given the configuration
+# is just uniform on a grid that we can determine (below using brute force)
+_grid = -10:0.001:10
+_logpdfs = [logpdf(Uniform(-20,20), my_config_sample, u) for u in _grid]
+
+_idx_all = findall(_logpdfs .> -Inf)
+
+l=_grid[minimum(_idx_all)]
+u=_grid[maximum(_idx_all)]
+
+@test (my_mu_hat - l) /(u-l) ≈ _p1 atol=1e-4

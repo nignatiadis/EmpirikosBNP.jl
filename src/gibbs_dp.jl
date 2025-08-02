@@ -10,7 +10,7 @@ function StatsBase.sample!(gc::AbstractNealAlgorithm)
     end
     if track_parameters(gc)
         for i in 1:length(gc.components)
-            isempty(gc.components[i]) && sample_component_param!(gc, i) # update parameter assignment
+            !isempty(gc.components[i]) && sample_component_param!(gc, i) # update parameter assignment
         end 
     end
     sample_α!(gc)   # update concentration parameter α 

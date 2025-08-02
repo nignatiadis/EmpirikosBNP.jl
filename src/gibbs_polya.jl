@@ -301,7 +301,7 @@ function _pval_custom(config_sample, z, σ, realized_pt; rtol=0.01)
     p_upper = QuadGK.quadgk(normalized_density, abs(z), Inf; rtol=rtol)[1]
     p_lower = QuadGK.quadgk(normalized_density, -Inf, -abs(z); rtol=rtol)[1]
     
-    Float64(p_upper + p_lower)
+    min(Float64(p_upper + p_lower), 1.0)
 end
 
 function _compute_pvals_integration(samples, mu_hats, indices; 
@@ -335,4 +335,51 @@ function _compute_pvals_integration(samples, mu_hats, indices;
     end
     
     return pvals
+end
+
+function _merge_samples(samples::NealAlgorithm8PolyaSamples...)
+    if isempty(samples)
+        throw(ArgumentError("Cannot merge empty list of samples"))
+    end
+    
+    if length(samples) == 1
+        return samples[1]
+    end
+    
+    # Use the first sample's gc (they should all be the same structure)
+    merged_gc = samples[1].gc
+    
+    # Check if any of the samples were created with lightweight=true
+    has_lightweight = any(s -> s.assignments === nothing, samples)
+    
+    if has_lightweight
+        # If any sample is lightweight, merge only the common fields
+        merged_assignments = nothing
+        merged_components = nothing
+        merged_realized_pts = nothing
+    else
+        # Merge assignments matrices (concatenate along sample dimension)
+        merged_assignments = hcat((s.assignments for s in samples)...)
+        
+        # Merge components vectors
+        merged_components = vcat((s.components for s in samples)...)
+        
+        # Merge realized_pts vectors  
+        merged_realized_pts = vcat((s.realized_pts for s in samples)...)
+    end
+    
+    # Merge log_αs vectors
+    merged_log_αs = vcat((s.log_αs for s in samples)...)
+    
+    # Merge Zs_mat matrices (concatenate along sample dimension)
+    merged_Zs_mat = hcat((s.Zs_mat for s in samples)...)
+    
+    return NealAlgorithm8PolyaSamples(
+        merged_gc,
+        merged_assignments,
+        merged_components, 
+        merged_log_αs,
+        merged_realized_pts,
+        merged_Zs_mat
+    )
 end

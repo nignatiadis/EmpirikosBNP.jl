@@ -3,6 +3,7 @@ using Test
 using Empirikos
 using QuadGK 
 using Random
+using Distributions
 
 
 Random.seed!(1)
@@ -157,3 +158,11 @@ l=_grid[minimum(_idx_all)]
 u=_grid[maximum(_idx_all)]
 
 @test (my_mu_hat - l) /(u-l) ≈ _p1 atol=1e-4
+
+
+# Oracle p-value computation: avoid p-values above 1 due to numerical error
+
+my_config_sample = EmpirikosBNP.ConfigurationSample(EmpirikosBNP.IIDSample([0.1972321182792515, -0.3108964672024414, 0.4300037014906913, 0.1825837138583747, -0.49892306642587597]))
+my_mu_hat = -1.9295690823362132e-5
+@test EmpirikosBNP._pval_custom(my_config_sample, my_mu_hat, 1.0, PGeneralizedGaussian(0, 1, 3); rtol=0.01) <= 1.0
+ 

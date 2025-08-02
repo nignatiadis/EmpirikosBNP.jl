@@ -76,7 +76,7 @@ var_list = 0.85:0.01:1.15
 
 logliks_chisq = loglikelihood.(chisq, var_list)
 
-plot(var_list, logliks_chisq)
+#plot(var_list, logliks_chisq)
 
 var_iid_sample = EmpirikosBNP.VarianceIIDSample(EmpirikosBNP.IIDSample(zs_rand), Normal())
 logliks_var_iid_sample = loglikelihood.(var_iid_sample, var_list)

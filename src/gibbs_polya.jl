@@ -40,30 +40,6 @@ function NealAlgorithm8Polya(
 end
 
 
-#function NealAlgorithm8Polya(
-#    Ss::AbstractVector;
-#    base_polya,
-#    m = 10,
-#    α_dist =  Gamma(0.001,100.0),
-#    prior = _default_prior(Ss)
-#    ) 
-#    all_Ss = wrap(Ss)
-#    empty_Ss = empty(all_Ss)
-#    vp = VariancePolyaSampler(Ss; base_polya, σ²_prior=prior)
-
-#    NealAlgorithm8Polya(prior,
-#             α_dist,
-#             1.0,
-#             [all_Ss, empty_Ss],
-#             [2],
-#             ones(Int, length(Ss)),
-#             Ss,
-#             m, 
-#             [1.0 for _ in 1:m],
-#             vp
-#             )
-#end
-
 
 
 function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)

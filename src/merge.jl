@@ -6,13 +6,13 @@ end
 
 function sub(orig::ScaledChiSquareSample, rm::ScaledChiSquareSample)
     ν = orig.ν - rm.ν
-    Ss = ν == 0 ? 0.0 : (orig.ν * response(orig) - response(rm)*rm.ν)/ν
+    Ss = ν == 0 ? 0.0 : (orig.ν * response(orig) - rm.ν * response(rm))/ν
     ScaledChiSquareSample(Ss, ν)
 end
 
 function add(orig::ScaledChiSquareSample, rm::ScaledChiSquareSample)
     ν = orig.ν + rm.ν
-    Ss = (orig.ν * response(orig) + response(rm)*rm.ν)/ν
+    Ss = (orig.ν * response(orig) + rm.ν * response(rm))/ν
     ScaledChiSquareSample(Ss, ν)
 end
 

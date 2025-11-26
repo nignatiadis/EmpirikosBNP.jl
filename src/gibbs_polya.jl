@@ -8,7 +8,7 @@ mutable struct NealAlgorithm8Polya{D,T,S,W<:AbstractWrappedEBSample,F,V,K} <:
     assignments::Vector{Int}
     data::Vector{S}
     m::Int64 # for MH refresh
-    param_cache::Vector{F}
+    param_cache::Vector{F} # Storage for Neal algorithm 8 auxiliary parameters
     vp::V
     scratch::K
 end
@@ -33,7 +33,7 @@ function NealAlgorithm8Polya(
              neal_cp.assignments,
              config_samples,
              m, 
-             [1.0 for _ in 1:m],
+             [1.0 for _ in 1:m], #param_cache
              vp,
              scratch
             )
@@ -58,6 +58,10 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)
         gc.param_cache[1] = rand(prior)
     end
     gc.param_cache[2:end] = rand(prior, m - 1)
+
+    if abs(std(gc.vp.realized_pt) - 1.0) > 1e-6
+        throw(ArgumentError("Standard deviation of realized_pt must be 1.0, got $(std(gc.vp.realized_pt))"))
+    end
 
     xlik = VarianceIIDSample(x, gc.vp.realized_pt)
 
@@ -87,7 +91,7 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)
     # clean up empties
     if new_k == gc.empties[1]
         popfirst!(gc.empties)
-        if isempty(gc.empties)
+        if isempty(gc.empties) # add new entry at end
             empty_Ss = empty(gc.components[1])
             push!(gc.components, empty_Ss)
             push!(gc.empties, length(gc.components))
@@ -102,7 +106,8 @@ end
 function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
     vp = neal8polya.vp
     realized_pt = rand(vp.base_polya)
-    vp.realized_pt = realized_pt / std(realized_pt)
+    norm_constant = std(realized_pt)
+    vp.realized_pt = realized_pt / norm_constant # normalize to std=1
     zero_offsets!(vp.base_polya)  # reset current posterior profile 
 
 
@@ -116,7 +121,6 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
         if isempty(comp)
             continue
         end
-        vp.realized_pt = vp.realized_pt / std(vp.realized_pt)
         # setup scratch for component
 
         empty!(neal8polya.scratch)
@@ -132,25 +136,27 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
         # 3. start updating the posterior polya tree
 
         neal8polya.vp.σ² = comp.param
-        variance_mh = neal8polya.vp.variance_mh
+        variance_mh = vp.variance_mh
         variance_mh = @set variance_mh.default_dist =
             Empirikos.posterior(comp.sample, neal8polya.prior)
-        neal8polya.vp.variance_mh = variance_mh
-        σ² = sample_variance!(neal8polya.vp, neal8polya.scratch)
+        vp.variance_mh = variance_mh
+        σ² = sample_variance!(vp, neal8polya.scratch)
         σ = sqrt(σ²)
-        σ_inv = 1.0 / σ
+        τ_inv = norm_constant / σ
         comp = @set comp.param = σ²
         neal8polya.components[comp_idx] = comp
 
-        vp.realized_pt = vp.realized_pt * σ
+        vp.realized_pt = vp.realized_pt * σ  # needed?
+
         for sample in neal8polya.scratch
-            impute_zbar!(neal8polya.vp, sample)
-            posterior!(sample, neal8polya.vp.base_polya, σ_inv)
+            impute_zbar!(vp, sample)
+            posterior!(sample, vp.base_polya, τ_inv)
         end
+
+        vp.realized_pt = vp.realized_pt / std(vp.realized_pt)
     end
     sample_α!(neal8polya)   # update concentration parameter α 
 
-    vp.realized_pt = vp.realized_pt / std(vp.realized_pt)
 
     if length(neal8polya.empties) > 20
         cleanup_components!(neal8polya)
@@ -193,7 +199,7 @@ function StatsBase.fit!(gc::NealAlgorithm8Polya, progress=true;
         Zs_mat[:,i] .= getproperty.(gc.data, :Z̄)
         if !lightweight
             assignments[:,i] .= gc.assignments
-            push!(components, copy(gc.components))
+            push!(components, deepcopy(gc.components))
             push!(realized_pts, deepcopy(gc.vp.realized_pt))
         end
     end

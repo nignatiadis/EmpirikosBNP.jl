@@ -41,7 +41,7 @@ function VariancePolyaSampler(data; base_polya, σ²_prior=_default_prior(data))
     Ss_merge = merge_samples(data)
 
     imputation_proposal = AverageImputationProposal(
-        base = TDist(5) #/ std(TDist(5))
+        base = TDist(5)
     )
     variance_proposal = VarianceProposal(
         default_dist = Empirikos.posterior(Ss_merge, σ²_prior),
@@ -110,10 +110,13 @@ function impute_zbar!(vp, config_sample::ConfigurationSample)
     transition_prev = config_sample.Z̄
     realized_pt = vp.realized_pt
 
+    if !isapprox(sqrt(vp.σ²), std(realized_pt))
+        throw(ArgumentError("sqrt(σ²) = $(sqrt(vp.σ²)) does not match std(realized_pt) = $(std(realized_pt))"))
+    end
+
     proposal_d = proposal_dist(vp.imputation_mh, config_sample, vp.σ²) 
     steps = vp.imputation_mh.mh_steps
 
-    #var_iid = VarianceIIDSample(IIDSample(vp.data), vp.realized_pt)
 
     for _ in Base.OneTo(steps)
         candidate = rand(proposal_d)

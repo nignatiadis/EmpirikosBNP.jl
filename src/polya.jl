@@ -265,7 +265,11 @@ function ∫xdP(d::Distributions.LocationScale, a, b)
 end
 
 
-function StatsBase.var(pt::PolyaTree) # TODO: NOT right if not symmetric.
+function StatsBase.var(pt::PolyaTree)
+    if !pt.pt.symmetrized
+        throw(ArgumentError("Variance calculation is only valid for symmetric PolyaTree distributions"))
+    end
+    
     J = pt.pt.J
     base = pt.pt.base
     qs = quantile.(base, collect((0:(2^J))/ 2^J))
@@ -290,7 +294,7 @@ struct IIDSample{V} <: AbstractIIDSample{V}
     Z::V
 end
 
-iid_samples(samples::IIDSample) = samples.Z
+iid_samples(samples::IIDSample) = samples.Z # rename to response?
 StatsBase.nobs(IIDSample) = length(IIDSample.Z)
 
 Base.@kwdef mutable struct ConfigurationSample{V, S, T} <: AbstractIIDSample{V}
@@ -368,14 +372,3 @@ function StatsBase.response(Z::VarianceIIDSample)
     Z.iidsample
 end
 
-
-struct RescaledIIDSample{V, U <: AbstractIIDSample{V}, R} <: AbstractIIDSample{V}
-    iidsample::U
-    scale::R
-end
-
-iid_samples(Z::RescaledIIDSample) = iid_samples(Z.iidsample) .* Z.scale
-
-function *(Z::AbstractIIDSample, σ::Real)
-    RescaledIIDSample(Z, σ)
-end

@@ -22,6 +22,37 @@ polyatree = rand(pt)
 @test Float64(quadgk(x -> x*pdf(polyatree, x), -Inf, Inf)[1]) ≈ 0.0 atol = 1e-10
 @test Float64(quadgk(x -> x^2*pdf(polyatree, x), -Inf, Inf)[1]) ≈ var(polyatree) atol = 1e-6
 
+# Check a couple things about the computation of the variance.
+
+J = polyatree.pt.J
+base = polyatree.pt.base
+qs = quantile.(base, collect((0:(2^J))/ 2^J))
+
+@test qs == [0.0; EmpirikosBNP._grid_points(polyatree.pt); Inf]
+@test length(polyatree.θs) == J
+@test length(qs) == 2^J + 1
+function sum_polya_tree(probs)
+    # Start with probability 1 at the root
+    level_probs = [1.0]
+    
+    for level in probs
+        new_probs = []
+        for (i, p) in enumerate(level_probs)
+            push!(new_probs, p * level[2i-1])  # left child
+            push!(new_probs, p * level[2i])    # right child
+        end
+        level_probs = new_probs
+    end
+    
+    return sum(level_probs)
+end
+
+@test sum_polya_tree(  polyatree.θs ) ≈ 1.0# should be 1.0
+
+norm_tdist = Empirikos.Folded(TDist(8)/std(TDist(8)))
+@test EmpirikosBNP.∫x²dP(norm_tdist, 0.2 , 1.0) ≈ quadgk(x -> x^2 * pdf(norm_tdist, x), 0.2, 1.0)[1]
+
+
 
 ptt = PolyaTreeDistribution(base=Empirikos.fold(TDist(5)), 
     J=7, α=2.0, 
@@ -83,6 +114,18 @@ logliks_var_iid_sample = loglikelihood.(var_iid_sample, var_list)
 
 @test argmax(logliks_var_iid_sample) == argmax(logliks_chisq)
 
+diff_1 = logliks_chisq[1] - logliks_var_iid_sample[1]
+
+@test all(logliks_chisq - logliks_var_iid_sample .≈ diff_1)
+# More on VarianceIIDSample
+
+single_var = 5.0
+
+@test sum(logpdf.(Normal(0,sqrt(single_var)), zs_rand)) ≈ loglikelihood(var_iid_sample, single_var)
+
+t_samples = EmpirikosBNP.VarianceIIDSample(EmpirikosBNP.IIDSample(zs_rand), TDist(8))
+@test sum(logpdf.(TDist(8)*sqrt(single_var), zs_rand)) ≈ loglikelihood(t_samples, single_var)
+@test prod(pdf.(TDist(8), zs_rand ./ sqrt(single_var))) / single_var^(length(zs_rand)/2) ≈ exp(loglikelihood(t_samples, single_var))
 
 #kfun(base::Distribution, x::AbstractFloat, j::Int) = min(floor(Int, 2^j * cdf(base, x)) + 1, 2^j)
 #_ns(base::Distribution, J::Int, x::AbstractVector) = map(j -> counts(kfun.(base, x, j), 1:2^j), 1:J)
@@ -165,4 +208,6 @@ u=_grid[maximum(_idx_all)]
 my_config_sample = EmpirikosBNP.ConfigurationSample(EmpirikosBNP.IIDSample([0.1972321182792515, -0.3108964672024414, 0.4300037014906913, 0.1825837138583747, -0.49892306642587597]))
 my_mu_hat = -1.9295690823362132e-5
 @test EmpirikosBNP._pval_custom(my_config_sample, my_mu_hat, 1.0, PGeneralizedGaussian(0, 1, 3); rtol=0.01) <= 1.0
- 
+
+
+

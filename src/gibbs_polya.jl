@@ -59,9 +59,9 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)
     end
     gc.param_cache[2:end] = rand(prior, m - 1)
 
-    if abs(std(gc.vp.realized_pt) - 1.0) > 1e-6
-        throw(ArgumentError("Standard deviation of realized_pt must be 1.0, got $(std(gc.vp.realized_pt))"))
-    end
+    #if abs(std(gc.vp.realized_pt) - 1.0) > 1e-6
+    #    throw(ArgumentError("Standard deviation of realized_pt must be 1.0, got $(std(gc.vp.realized_pt))"))
+    #end
 
     xlik = VarianceIIDSample(x, gc.vp.realized_pt)
 

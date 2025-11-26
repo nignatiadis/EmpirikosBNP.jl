@@ -110,9 +110,9 @@ function impute_zbar!(vp, config_sample::ConfigurationSample)
     transition_prev = config_sample.Z̄
     realized_pt = vp.realized_pt
 
-    if !isapprox(sqrt(vp.σ²), std(realized_pt))
-        throw(ArgumentError("sqrt(σ²) = $(sqrt(vp.σ²)) does not match std(realized_pt) = $(std(realized_pt))"))
-    end
+    #if !isapprox(sqrt(vp.σ²), std(realized_pt))
+    #    throw(ArgumentError("sqrt(σ²) = $(sqrt(vp.σ²)) does not match std(realized_pt) = $(std(realized_pt))"))
+    #end
 
     proposal_d = proposal_dist(vp.imputation_mh, config_sample, vp.σ²) 
     steps = vp.imputation_mh.mh_steps

@@ -84,6 +84,14 @@ function _pval_fun(samples::NealAlgorithmSamples, mu_hats)
 end 
 
 
+function _posterior_means(samples::NealAlgorithmSamples)
+    postmeans_mat = Matrix{Float64}(undef, size(samples.assignments)...)
+    for j in 1:size(samples.assignments, 2)
+        postmeans_mat[:,j] .= getproperty.(samples.components[j][samples.assignments[:,j]], :param)
+    end
+    mean(postmeans_mat, dims=2) |> vec
+end 
+
 assignments(gf::NealAlgorithmSamples) = gf.assignments
 
 

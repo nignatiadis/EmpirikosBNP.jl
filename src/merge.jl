@@ -1,3 +1,5 @@
+# Scaled Chi Square Samples 
+
 function merge_samples(Ss::AbstractVector{<:ScaledChiSquareSample})
     total_dof = sum(nuisance_parameter.(Ss))
     total_Ssq = mean(response.(Ss))
@@ -17,6 +19,46 @@ function add(orig::ScaledChiSquareSample, rm::ScaledChiSquareSample)
 end
 
 Base.empty(::ScaledChiSquareSample) = ScaledChiSquareSample(0.0, 0)
+
+# Normal Samples
+
+function merge_samples(Ss::AbstractVector{<:NormalSample})
+    precisions = 1 ./ var.(Ss)
+    weighted_mean = mean(response.(Ss), weights(precisions))
+    combined_σ = sqrt(1 / sum(precisions))
+    NormalSample(weighted_mean, combined_σ)
+end
+
+function sub(orig::NormalSample, rm::NormalSample)
+    orig_precision = 1 / var(orig)
+    rm_precision = 1 / var(rm)
+    new_precision = orig_precision - rm_precision
+    
+    if new_precision <= 0
+        return NormalSample(0.0, Inf)
+    end
+    
+    new_Z = (orig_precision * response(orig) - rm_precision * response(rm)) / new_precision
+    new_σ = sqrt(1 / new_precision)
+    NormalSample(new_Z, new_σ)
+end
+
+function add(orig::NormalSample, rm::NormalSample)
+    orig_precision = 1 / var(orig)
+    rm_precision = 1 / var(rm)
+    new_precision = orig_precision + rm_precision
+    
+    new_Z = (orig_precision * response(orig) + rm_precision * response(rm)) / new_precision
+    new_σ = sqrt(1 / new_precision)
+    NormalSample(new_Z, new_σ)
+end
+
+Base.empty(::NormalSample) = NormalSample(0.0, Inf)
+
+# Wrappers
+
+
+
 
 abstract type AbstractWrappedEBSample{T} end
 

@@ -229,7 +229,7 @@ Compute p-values for the Polya tree model.
 - `show_progress`: whether to show progress bars
 """
 function _pval_fun(samples::NealAlgorithm8PolyaSamples, mu_hats; 
-                  method=:adaptive, refinement_threshold=0.015, rtol=0.01, show_progress=true)
+                  method=:monte_carlo, refinement_threshold=0.015, rtol=0.01, show_progress=true)
     
     
     if method == :monte_carlo
@@ -266,6 +266,13 @@ function _pval_fun(samples::NealAlgorithm8PolyaSamples, mu_hats;
     end
 end
 
+function _pval_fun_median(samples::NealAlgorithm8PolyaSamples, mu_hats, median_hats)
+    n_samples = size(samples.Zs_mat, 2)
+    Zs_mat_recentered = samples.Zs_mat .- mu_hats .+ median_hats
+    pvs = vec((1 .+ sum(abs.(Zs_mat_recentered) .>= abs.(median_hats), dims=2)) ./ (n_samples + 1))
+    pvs
+end 
+
 function _pval_custom(config_sample, z, σ, realized_pt; rtol=0.01)
     # Scale the Polya tree by σ
     scaled_pt = realized_pt * σ  #/ std(realized_pt)=1
@@ -277,12 +284,11 @@ function _pval_custom(config_sample, z, σ, realized_pt; rtol=0.01)
     norm_const = QuadGK.quadgk(t_density, -Inf, Inf; rtol=rtol)[1]
     
     # Normalized density
-    normalized_density(t) = t_density(t) / norm_const
+    normalized_density(t) = t_density(t) / norm_const   
     
     # Two-tailed p-value
     p_upper = QuadGK.quadgk(normalized_density, abs(z), Inf; rtol=rtol)[1]
     p_lower = QuadGK.quadgk(normalized_density, -Inf, -abs(z); rtol=rtol)[1]
-    
     min(Float64(p_upper + p_lower), 1.0)
 end
 

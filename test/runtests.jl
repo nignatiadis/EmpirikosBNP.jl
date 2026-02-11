@@ -4,7 +4,7 @@ using Empirikos
 using QuadGK 
 using Random
 using Distributions
-
+using StatsBase
 
 Random.seed!(1)
 
@@ -21,6 +21,10 @@ polyatree = rand(pt)
 @test Float64(quadgk(x -> pdf(polyatree, x), -Inf, Inf)[1]) ≈ 1.0 atol = 1e-6
 @test Float64(quadgk(x -> x*pdf(polyatree, x), -Inf, Inf)[1]) ≈ 0.0 atol = 1e-10
 @test Float64(quadgk(x -> x^2*pdf(polyatree, x), -Inf, Inf)[1]) ≈ var(polyatree) atol = 1e-6
+
+
+
+
 
 # Check a couple things about the computation of the variance.
 
@@ -93,8 +97,27 @@ polyatreet_scale = rand(ptt_scale)
 @test Float64(quadgk(x -> x^2*pdf(polyatreet_scale, x), -Inf, Inf)[1]) ≈ var(polyatreet_scale) atol = 1e-6
 
 
+pt_median = PolyaTreeDistribution(base=TDist(8), 
+    J=7, α=2.0, 
+    symmetrized=false,
+    median_centered=true)
 
-    
+J = pt_median.J
+qs = quantile.(pt_median.base, collect((0:(2^J))/ 2^J))
+   
+polyatreet_median = rand(pt_median)
+
+m = StatsBase.mean(polyatreet_median)
+# Check if we got the expectation right.
+@test Float64(quadgk(x -> x*pdf(polyatreet_median, x), -Inf, Inf)[1]) ≈ m  atol=1e-5
+# Check if median ≈ 0
+@test quadgk(x -> pdf(polyatreet_median, x), -Inf, 0.0)[1] ≈ 0.5 atol=1e-5 
+
+sm =  quadgk(x -> abs2(x)*pdf(polyatreet_median, x), -Inf, Inf)[1]
+@test StatsBase.var(polyatreet_median) ≈ sm - abs2(m) atol=1e-5
+
+
+
 ## test for VarianceIIDSample
 
 Random.seed!(1)

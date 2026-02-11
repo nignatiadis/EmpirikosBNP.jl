@@ -29,13 +29,18 @@ Base.@kwdef struct PTFun
     inner_power::Int64 
     boundary_multiplier::Float64 = inner_multiplier
     boundary_power::Int64 = inner_power
+    symmetric::Bool = true
 end
 
 # TODO: Check why this is defined at the boundary only. Is it only true for *folded* base measure?
 function (f::PTFun)(j,k)
-    k == 2^(j-1) ? (f.boundary_multiplier * j^f.boundary_power) : (f.inner_multiplier * j^f.inner_power)
+    if f.symmetric
+        fjk = k == 2^(j-1) ? (f.boundary_multiplier * j^f.boundary_power) : (f.inner_multiplier * j^f.inner_power)
+    else 
+        fjk = ((k == 2^(j-1)) || (k == 1) ) ? (f.boundary_multiplier * j^f.boundary_power) : (f.inner_multiplier * j^f.inner_power)
+    end
+    fjk
 end
-
 function _grid_points(polya::PolyaTreeDistribution) 
     quantile.(polya.base, (1:(2^polya.J-1)) ./ 2^polya.J)
 end 
@@ -91,9 +96,7 @@ function Distributions.pdf(pt::PolyaTree, x::Real)
     symmetrized ? f/2 : f
 end
 
-#function Distributions.logpdf(pt::PolyaTree, x::Real)
-#   log(pdf(pt, x))
-#end
+
 
 function Base.rand(rng::AbstractRNG, d::PolyaTreeDistribution)
     n = d.offsets
@@ -265,11 +268,29 @@ function ∫xdP(d::Distributions.LocationScale, a, b)
 end
 
 
-function StatsBase.var(pt::PolyaTree)
+function StatsBase.mean(pt::PolyaTree)
     if !pt.pt.symmetrized
-        throw(ArgumentError("Variance calculation is only valid for symmetric PolyaTree distributions"))
-    end
-    
+        J = pt.pt.J
+        base = pt.pt.base
+        qs = quantile.(base, collect((0:(2^J))/ 2^J))
+        qs_len = length(qs) - 1
+        ps = zeros(Float64, qs_len)
+        sq = zeros(Float64, qs_len)
+        for i in Base.OneTo(qs_len)
+            midpt = (qs[i] + qs[i+1])/2
+            ps[i] = _prob(pt, midpt)
+            sq[i] = ∫xdP(base, qs[i], qs[i+1])
+        end
+        ps .*= 2^J
+        m = sum(sq, weights(ps))
+    else 
+        m = zero(Float64)
+    end 
+    m
+end
+
+function StatsBase.var(pt::PolyaTree)
+    # Compute second moment
     J = pt.pt.J
     base = pt.pt.base
     qs = quantile.(base, collect((0:(2^J))/ 2^J))
@@ -282,7 +303,13 @@ function StatsBase.var(pt::PolyaTree)
         sq[i] = ∫x²dP(base, qs[i], qs[i+1])
     end
     ps .*= 2^J
-    sum(sq, weights(ps))
+    sm = sum(sq, weights(ps))
+
+    # Compute first moment
+    fm = Empirikos.mean(pt) 
+
+    # Return variance
+    sm - abs2(fm)
 end
 
 # Posterior Computations

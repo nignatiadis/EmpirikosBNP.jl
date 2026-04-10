@@ -177,7 +177,9 @@ function StatsBase.sample!(gc::NealAlgorithm2GaussianConvolution, i::Int)
 
     log_probs[first(gc.empties)] = logpdf(prior, x) + gc.logα
 
-    new_k = sample(Weights(exp.(log_probs)))
+    max_lp = maximum(log_probs)
+    new_k = sample(Weights(exp.(log_probs .- max_lp)))
+
     gc.components[new_k] = add(gc.components[new_k], x)
     gc.assignments[i] = new_k
 
@@ -327,8 +329,9 @@ function _posterior_cis(samples::NealAlgorithmGaussianConvolutionSamples)
     for i in 1:n_units
         comps = [samples.components[j][samples.assignments[i, j]] for j in 1:n_runs]
         params = getproperty.(comps, :param)
-        prior_dbn = MixtureModel(Normal.(params, sqrt.(samples.As)), weights)
-        post_dbn = Empirikos.posterior(samples.gc.data[i], prior_dbn)
+        prior_comb_dbns = Normal.(params, sqrt.(samples.As))
+        post_comp_dbns = Empirikos.posterior.(samples.gc.data[i], prior_comb_dbns)
+        post_dbn = MixtureModel(post_comp_dbns, weights)
         lower_vec[i] = quantile(post_dbn, 0.025)
         upper_vec[i] = quantile(post_dbn, 0.975)
     end

@@ -15,6 +15,7 @@ using Random
 using Roots
 using Setfield
 using StatsBase
+using TransformVariables
 import StatsBase: var, nobs, sample, sample!, fit!
 
 using QuadGK
@@ -24,6 +25,7 @@ include("merge.jl")
 include("defaults.jl")
 include("basic_mh.jl")
 include("gibbs_dp.jl")
+include("gibbs_dp_convolution.jl")
 include("gibbs_polya.jl")
 
 

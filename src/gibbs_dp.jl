@@ -509,10 +509,8 @@ function _posterior_cis(samples::NealAlgorithmSamples)
     for i in 1:n_units
         comps = [samples.components[j][samples.assignments[i,j]] for j in 1:n_runs]
         j_params = getproperty.(comps, :param)
-        prior_dbn = DiscreteNonParametric(j_params, [1/n_runs for _ in 1:n_runs])
-        post_dbn = Empirikos.posterior(samples.gc.data[i], prior_dbn)
-        lower_vec[i] = quantile(post_dbn, 0.025)
-        upper_vec[i] = quantile(post_dbn, 0.975)
+        lower_vec[i] = quantile(j_params, 0.025)
+        upper_vec[i] = quantile(j_params, 0.975)
     end
     lower_vec, upper_vec
 end 

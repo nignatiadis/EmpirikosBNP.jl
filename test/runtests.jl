@@ -189,6 +189,47 @@ pt = PolyaTreeDistribution(base=Empirikos.fold(TDist(5)),
 @test EmpirikosBNP.kfun(pt, Inf, 2) == 4
 
 
+function old_log_prob(ptree, x)
+    θs = ptree.θs
+    log_prob = 0.0
+    for (j, θ) in enumerate(θs)
+        index = EmpirikosBNP.kfun(ptree.pt, x, j)
+        log_prob += log(θ[index])
+    end
+    log_prob
+end
+
+function old_logpdf(ptree, x)
+    symmetrized = ptree.pt.symmetrized
+    J = ptree.pt.J
+    base = ptree.pt.base
+    x = symmetrized ? abs(x) : x
+    log_f = old_log_prob(ptree, x) + Distributions.logpdf(base, x) + J * log(2)
+    symmetrized ? log_f - log(2) : log_f
+end
+
+function old_logpdf(d::Distributions.LocationScale, x)
+    old_logpdf(d.ρ, (x - d.μ) / d.σ) - log(abs(d.σ))
+end
+
+inner_polya_tree(ptree) = ptree
+inner_polya_tree(d::Distributions.LocationScale) = inner_polya_tree(d.ρ)
+
+function check_logpdf_matches_old_implementation(ptree)
+    tree = inner_polya_tree(ptree)
+    split_points = Float64[]
+    for splits in tree.pt.stored_splits
+        append!(split_points, splits)
+    end
+    xgrid = vcat(randn(1000), split_points, prevfloat.(split_points), nextfloat.(split_points))
+    @test old_logpdf.(Ref(ptree), xgrid) ≈ logpdf.(Ref(ptree), xgrid) rtol=0 atol=1e-12
+end
+
+check_logpdf_matches_old_implementation(polyatree)
+check_logpdf_matches_old_implementation(polyatreet)
+check_logpdf_matches_old_implementation(polyatreet / std(polyatreet))
+
+
 
 Zs = randexp(1000)
 

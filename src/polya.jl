@@ -70,10 +70,14 @@ end
 
 function _log_prob(pt::PolyaTree, x)
     θs = pt.θs
+    J = length(θs)
     log_prob = 0.0
-    for (j, θ) in enumerate(θs)
-        index = kfun(pt.pt, x, j)
-        log_prob += log(θ[index])
+    J == 0 && return log_prob
+
+    index = kfun(pt.pt, x, J)
+    for j in J:-1:1
+        log_prob += log(θs[j][index])
+        index = cld(index, 2)
     end
     log_prob
 end
@@ -398,4 +402,3 @@ end
 function StatsBase.response(Z::VarianceIIDSample)
     Z.iidsample
 end
-

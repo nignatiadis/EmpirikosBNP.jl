@@ -87,9 +87,35 @@ function Distributions.logpdf(pt::PolyaTree, x::Real)
     J = pt.pt.J
     base = pt.pt.base
     x = symmetrized ? abs(x) : x
-    log_f = _log_prob(pt, x) + Distributions.logpdf(base, x) + J * log(2)
-    symmetrized ? log_f - log(2) : log_f
+    log_f = _log_prob(pt, x) + J * log(2)
+    symmetrized ? log_f + _symmetrized_base_logpdf(base, x) : log_f + Distributions.logpdf(base, x)
 end
+
+_symmetrized_base_logpdf(base, x) = Distributions.logpdf(base, x) - log(2)
+_symmetrized_base_logpdf(base::Empirikos.Folded, x) =
+    _symmetrized_base_logpdf(Empirikos.unfold(base), base, x)
+
+_symmetrized_base_logpdf_fallback(base, x) = Distributions.logpdf(base, x) - log(2)
+
+_symmetrized_base_logpdf(d::TDist, ::Empirikos.Folded, x) =
+    Distributions.logpdf(d, x)
+
+function _symmetrized_base_logpdf(d::Normal, base::Empirikos.Folded, x)
+    iszero(mean(d)) && return Distributions.logpdf(d, x)
+    _symmetrized_base_logpdf_fallback(base, x)
+end
+
+function _symmetrized_base_logpdf(
+    d::Distributions.LocationScale{<:Any,<:Any,<:Union{Normal,TDist}},
+    base::Empirikos.Folded,
+    x,
+)
+    iszero(d.μ) && return Distributions.logpdf(d, x)
+    _symmetrized_base_logpdf_fallback(base, x)
+end
+
+_symmetrized_base_logpdf(_, base::Empirikos.Folded, x) =
+    _symmetrized_base_logpdf_fallback(base, x)
 
 function Distributions.pdf(pt::PolyaTree, x::Real)
     symmetrized = pt.pt.symmetrized

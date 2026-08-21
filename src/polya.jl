@@ -393,21 +393,48 @@ end
 
 function Empirikos.posterior(sample::AbstractIIDSample, model::PolyaTreeDistribution)
     resp = iid_samples(sample)
-    offset_post = model.symmetrized ? _ns(model, abs.(resp)) : _ns(model, resp)
-    offset_old = model.offsets
-    post_model = @set model.offsets = offset_post .+ offset_old
+    offsets = copy.(model.offsets)
+    _increment_offsets!(offsets, model, resp, 1.0)
+    post_model = @set model.offsets = offsets
     post_model
 end
 
 function zero_offsets!(model::PolyaTreeDistribution)
-    model.offsets .= zero.(model.offsets)
+    for offset in model.offsets
+        fill!(offset, 0)
+    end
     model
 end
 
-function posterior!(sample::AbstractIIDSample, model::PolyaTreeDistribution, σ = 1.0)
+@inline function _increment_offsets!(offsets, model::PolyaTreeDistribution, x::Real)
+    model.J == 0 && return offsets
+    index = kfun(model, x, model.J)
+    @inbounds for j in model.J:-1:1
+        offsets[j][index] += 1
+        index = cld(index, 2)
+    end
+    offsets
+end
+
+# σ is a multiplicative scale applied to each response before binning.
+function _increment_offsets!(
+    offsets,
+    model::PolyaTreeDistribution,
+    resp::AbstractVector,
+    σ::Real,
+)
+    symmetrized = model.symmetrized
+    @inbounds for r in resp
+        x = r * σ
+        _increment_offsets!(offsets, model, symmetrized ? abs(x) : x)
+    end
+    offsets
+end
+
+# σ is a multiplicative scale applied to each response before binning.
+function posterior!(sample::AbstractIIDSample, model::PolyaTreeDistribution, σ::Real = 1.0)
     resp = iid_samples(sample)
-    offset_post = model.symmetrized ? _ns(model, abs.(resp) .* σ) : _ns(model, resp .* σ)
-    model.offsets .+= offset_post
+    _increment_offsets!(model.offsets, model, resp, σ)
     model
 end
 

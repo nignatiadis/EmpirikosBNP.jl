@@ -249,6 +249,57 @@ ns2 = EmpirikosBNP._ns(pt, Zs)
 
 @test ns1 == ns2
 
+function old_posterior_offsets(sample, model, σ)
+    resp = EmpirikosBNP.iid_samples(sample)
+    offset_post = model.symmetrized ?
+                  EmpirikosBNP._ns(model, abs.(resp) .* σ) :
+                  EmpirikosBNP._ns(model, resp .* σ)
+    offsets = copy.(model.offsets)
+    offsets .+= offset_post
+    offsets
+end
+
+posterior_sample = EmpirikosBNP.IIDSample([-1.2, -0.4, 0.0, 0.3, 1.7])
+for posterior_model in (
+    PolyaTreeDistribution(
+        base = Empirikos.fold(Normal()),
+        J = 5,
+        α = 2.0,
+        symmetrized = true,
+        median_centered = false,
+    ),
+    PolyaTreeDistribution(
+        base = TDist(8),
+        J = 5,
+        α = 2.0,
+        symmetrized = false,
+        median_centered = false,
+    ),
+)
+    for σ in (1.0, 0.7)
+        old_offsets = old_posterior_offsets(posterior_sample, posterior_model, σ)
+        updated_model = deepcopy(posterior_model)
+        EmpirikosBNP.posterior!(posterior_sample, updated_model, σ)
+        @test updated_model.offsets == old_offsets
+    end
+
+    old_offsets = old_posterior_offsets(posterior_sample, posterior_model, 1.0)
+    post_model = Empirikos.posterior(posterior_sample, posterior_model)
+    @test post_model.offsets == old_offsets
+    @test posterior_model.offsets == zero.(posterior_model.offsets)
+end
+
+posterior_model_j0 = PolyaTreeDistribution(
+    base = Normal(),
+    J = 0,
+    α = 2.0,
+    symmetrized = false,
+    median_centered = false,
+)
+posterior_model_j0_updated = deepcopy(posterior_model_j0)
+EmpirikosBNP.posterior!(posterior_sample, posterior_model_j0_updated)
+@test isempty(posterior_model_j0_updated.offsets)
+
 
 #@btime EmpirikosBNP._ns($(pt.base), $(5), $(Zs))
 #@btime EmpirikosBNP._ns($(pt), $(Zs))

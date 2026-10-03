@@ -7,6 +7,7 @@ using Distributions
 using StatsBase
 
 include("logpdf_evaluator.jl")
+include("configuration_logpdf.jl")
 
 Random.seed!(1)
 

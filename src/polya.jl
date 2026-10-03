@@ -121,7 +121,7 @@ function _logpdf_evaluator(d::TDist{Float64})
     evaluate
 end
 
-function _logpdf_evaluator(d::Distributions.LocationScale{<:Any,<:Any,<:Union{Normal,TDist}})
+function _logpdf_evaluator(d::Distributions.LocationScale{<:Any,<:Any,<:Union{Normal,TDist,PolyaTree}})
     μ, σ, base = params(d)
     evaluate = _logpdf_evaluator(base)
     logscale = log(abs(σ))
@@ -405,6 +405,15 @@ end
 function Distributions.logpdf(d::Distribution, iid_sample::ConfigurationSample, z̄)
     sum(Distributions.logpdf.(d, iid_samples(iid_sample, z̄)))
 end 
+
+function Distributions.logpdf(
+    d::Union{PolyaTree,Distributions.LocationScale{<:Any,<:Any,<:PolyaTree}},
+    config::ConfigurationSample,
+    z̄ = config.Z̄,
+)
+    logdensity = _logpdf_evaluator(d)
+    sum(z -> logdensity(z + z̄), config.configuration; init = 0.0)
+end
 
 
 

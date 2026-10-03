@@ -6,6 +6,8 @@ using Random
 using Distributions
 using StatsBase
 
+include("logpdf_evaluator.jl")
+
 Random.seed!(1)
 
 
@@ -234,10 +236,8 @@ for base in (
     Empirikos.fold(TDist(8)),
     Empirikos.fold(Normal() * 2),
     Empirikos.fold(TDist(8) / std(TDist(8))),
-    Empirikos.fold(Normal(1, 1)),
-    Empirikos.fold(Normal(1, 1) * 2),
 )
-    @test EmpirikosBNP._symmetrized_base_logpdf(base, 0.3) ≈ Distributions.logpdf(base, 0.3) - log(2)
+    @test EmpirikosBNP._symmetrized_base_logpdf_evaluator(base)(0.3) ≈ Distributions.logpdf(base, 0.3) - log(2)
 end
 
 

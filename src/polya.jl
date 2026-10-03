@@ -53,9 +53,16 @@ function _ns(polya::PolyaTreeDistribution, x::AbstractVector)
     map(j -> counts(kfun.(Ref(polya), x, j), 1:2^j), 1:polya.J)
 end
 
-struct PolyaTree{P,T} <: Distribution{Univariate, Continuous}
+struct PolyaTree{P,T,F} <: Distribution{Univariate, Continuous}
     pt::P
     θs::T
+    base_logpdf::F
+end
+
+function PolyaTree(pt, θs)
+    base_logpdf = pt.symmetrized ?
+        _symmetrized_base_logpdf_evaluator(pt.base) : _logpdf_evaluator(pt.base)
+    PolyaTree(pt, θs, base_logpdf)
 end
 
 function _prob(pt::PolyaTree, x)
@@ -85,37 +92,52 @@ end
 function Distributions.logpdf(pt::PolyaTree, x::Real)
     symmetrized = pt.pt.symmetrized
     J = pt.pt.J
-    base = pt.pt.base
     x = symmetrized ? abs(x) : x
     log_f = _log_prob(pt, x) + J * log(2)
-    symmetrized ? log_f + _symmetrized_base_logpdf(base, x) : log_f + Distributions.logpdf(base, x)
+    log_f + pt.base_logpdf(x)
 end
 
-_symmetrized_base_logpdf(base, x) = Distributions.logpdf(base, x) - log(2)
-_symmetrized_base_logpdf(base::Empirikos.Folded, x) =
-    _symmetrized_base_logpdf(Empirikos.unfold(base), base, x)
+# Prepare a normalized log density for repeated evaluation with fixed parameters.
+_logpdf_evaluator(d) = Base.Fix1(logpdf, d)
 
-_symmetrized_base_logpdf_fallback(base, x) = Distributions.logpdf(base, x) - log(2)
-
-_symmetrized_base_logpdf(d::TDist, ::Empirikos.Folded, x) =
-    Distributions.logpdf(d, x)
-
-function _symmetrized_base_logpdf(d::Normal, base::Empirikos.Folded, x)
-    iszero(mean(d)) && return Distributions.logpdf(d, x)
-    _symmetrized_base_logpdf_fallback(base, x)
+function _logpdf_evaluator(d::Normal{Float64})
+    μ, σ = params(d)
+    iszero(σ) && return Base.Fix1(logpdf, d)
+    standard = Normal(zero(μ), one(σ))
+    logscale = log(σ)
+    evaluate(x::Float64) = logpdf(standard, (x - μ) / σ) - logscale
+    evaluate(x::Real) = logpdf(d, x)
+    evaluate
 end
 
-function _symmetrized_base_logpdf(
-    d::Distributions.LocationScale{<:Any,<:Any,<:Union{Normal,TDist}},
-    base::Empirikos.Folded,
-    x,
+function _logpdf_evaluator(d::TDist{Float64})
+    ν = first(params(d))
+    isinf(ν) && return Base.Fix1(logpdf, d)
+    logconstant = logpdf(d, zero(ν))
+    halfνp1 = (ν + 1) / 2
+    # StatsFuns supplies the normalizer; only the Student-t kernel depends on x.
+    evaluate(x::Float64) = logconstant - halfνp1 * log1p(x^2 / ν)
+    evaluate(x::Real) = logpdf(d, x)
+    evaluate
+end
+
+function _logpdf_evaluator(d::Distributions.LocationScale{<:Any,<:Any,<:Union{Normal,TDist}})
+    μ, σ, base = params(d)
+    evaluate = _logpdf_evaluator(base)
+    logscale = log(abs(σ))
+    x -> evaluate((x - μ) / σ) - logscale
+end
+
+function _symmetrized_base_logpdf_evaluator(
+    base::Empirikos.Folded{<:Union{Normal,TDist,Distributions.LocationScale{<:Any,<:Any,<:TDist}}},
 )
-    iszero(d.μ) && return Distributions.logpdf(d, x)
-    _symmetrized_base_logpdf_fallback(base, x)
+    d = Empirikos.unfold(base)
+    iszero(median(d)) || throw(ArgumentError("A symmetrized Polya tree requires a base centered at zero."))
+    _logpdf_evaluator(d)
 end
 
-_symmetrized_base_logpdf(_, base::Empirikos.Folded, x) =
-    _symmetrized_base_logpdf_fallback(base, x)
+_symmetrized_base_logpdf_evaluator(base) =
+    throw(ArgumentError("A symmetrized Polya tree requires a folded Normal or Student-t base."))
 
 function Distributions.pdf(pt::PolyaTree, x::Real)
     symmetrized = pt.pt.symmetrized

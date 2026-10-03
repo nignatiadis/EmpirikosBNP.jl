@@ -53,16 +53,17 @@ function _ns(polya::PolyaTreeDistribution, x::AbstractVector)
     map(j -> counts(kfun.(Ref(polya), x, j), 1:2^j), 1:polya.J)
 end
 
-struct PolyaTree{P,T,F} <: Distribution{Univariate, Continuous}
+struct PolyaTree{P,T,F,L} <: Distribution{Univariate, Continuous}
     pt::P
     θs::T
     base_logpdf::F
+    log_leaf_probs::L
 end
 
 function PolyaTree(pt, θs)
     base_logpdf = pt.symmetrized ?
         _symmetrized_base_logpdf_evaluator(pt.base) : _logpdf_evaluator(pt.base)
-    PolyaTree(pt, θs, base_logpdf)
+    PolyaTree(pt, θs, base_logpdf, _log_leaf_probs(θs))
 end
 
 function _prob(pt::PolyaTree, x)
@@ -75,18 +76,23 @@ function _log_prob_old(pt::PolyaTree, x)
     sum(log.(θ[kfun(pt.pt, x, j)]) for (j, θ) in enumerate(θs))
 end
 
-function _log_prob(pt::PolyaTree, x)
-    θs = pt.θs
+function _log_leaf_probs(θs)
     J = length(θs)
-    log_prob = 0.0
-    J == 0 && return log_prob
-
-    index = kfun(pt.pt, x, J)
-    for j in J:-1:1
-        log_prob += log(θs[j][index])
-        index = cld(index, 2)
+    # Weights stay fixed for a realized tree; preserve the leaf-to-root sum order.
+    map(1:2^J) do index
+        log_prob = 0.0
+        for j in J:-1:1
+            log_prob += log(θs[j][index])
+            index = cld(index, 2)
+        end
+        log_prob
     end
-    log_prob
+end
+
+function _log_prob(pt::PolyaTree, x)
+    J = length(pt.θs)
+    index = J == 0 ? 1 : kfun(pt.pt, x, J)
+    pt.log_leaf_probs[index]
 end
 
 function Distributions.logpdf(pt::PolyaTree, x::Real)

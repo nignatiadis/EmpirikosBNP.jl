@@ -3,13 +3,10 @@ using EmpirikosBNP, Empirikos, Random, StatsBase
 using EmpirikosBNP: @set
 const E = EmpirikosBNP
 
-# Frozen sweep from b08b586, retaining its cleanup threshold of 20.
+# Cleanup reference: use the current tree move but the old threshold of 20.
 function sweep!(gc)
     vp = gc.vp
-    realized_pt = rand(vp.base_polya)
-    norm_constant = std(realized_pt)
-    vp.realized_pt = realized_pt / norm_constant
-    E.zero_offsets!(vp.base_polya)
+    E.sample_tree_and_scales!(gc)
     for i in eachindex(gc.data)
         sample!(gc, i)
     end
@@ -27,13 +24,11 @@ function sweep!(gc)
         vp.variance_mh = variance_mh
         σ² = E.sample_variance!(vp, gc.scratch)
         σ = sqrt(σ²)
-        τ_inv = norm_constant / σ
         comp = @set comp.param = σ²
         gc.components[comp_idx] = comp
         vp.realized_pt = vp.realized_pt * σ
         for observation in gc.scratch
             E.impute_zbar!(vp, observation)
-            E.posterior!(observation, vp.base_polya, τ_inv)
         end
         vp.realized_pt = vp.realized_pt / std(vp.realized_pt)
     end

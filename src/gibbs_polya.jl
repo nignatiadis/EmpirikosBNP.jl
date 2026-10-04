@@ -106,12 +106,44 @@ end
 
 
 
+function sample_tree_and_scales!(gc::NealAlgorithm8Polya)
+    vp = gc.vp
+    raw_tree = vp.realized_pt.ρ
+    old_std = std(raw_tree)
+
+    # Build the conjugate tree proposal at the current transformed observations.
+    # The matching variance rescaling below preserves these observations.
+    zero_offsets!(vp.base_polya)
+    for i in eachindex(gc.data)
+        variance = gc.components[gc.assignments[i]].param
+        posterior!(gc.data[i], vp.base_polya, old_std / sqrt(variance))
+    end
+    proposed_tree = rand(vp.base_polya)
+    new_std = std(proposed_tree)
+    ratio = (new_std / old_std)^2
+
+    # The tree prior and likelihood cancel against the proposal ratio.
+    # Each occupied variance atom contributes its prior ratio and one
+    # Jacobian factor (not one per datum).
+    log_acceptance = sum(gc.components) do comp
+        isempty(comp) && return 0.0
+        log(ratio) + logpdf(gc.prior, ratio * comp.param) - logpdf(gc.prior, comp.param)
+    end
+    if -Random.randexp() < log_acceptance
+        for k in eachindex(gc.components)
+            comp = gc.components[k]
+            isempty(comp) && continue
+            gc.components[k] = @set comp.param = ratio * comp.param
+        end
+        vp.realized_pt = proposed_tree / new_std
+        return true
+    end
+    false
+end
+
 function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
     vp = neal8polya.vp
-    realized_pt = rand(vp.base_polya)
-    norm_constant = std(realized_pt)
-    vp.realized_pt = realized_pt / norm_constant # normalize to std=1
-    zero_offsets!(vp.base_polya)  # reset current posterior profile 
+    sample_tree_and_scales!(neal8polya)
 
 
     for i = 1:length(neal8polya.data)
@@ -133,10 +165,9 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
             end
         end
 
-        # three things to do
+        # two things to do
         # 1. update the variance for this component
         # 2. update the zbar for each data point
-        # 3. start updating the posterior polya tree
 
         neal8polya.vp.σ² = comp.param
         variance_mh = vp.variance_mh
@@ -145,7 +176,6 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
         vp.variance_mh = variance_mh
         σ² = sample_variance!(vp, neal8polya.scratch)
         σ = sqrt(σ²)
-        τ_inv = norm_constant / σ
         comp = @set comp.param = σ²
         neal8polya.components[comp_idx] = comp
 
@@ -153,7 +183,6 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
 
         for sample in neal8polya.scratch
             impute_zbar!(vp, sample)
-            posterior!(sample, vp.base_polya, τ_inv)
         end
 
         vp.realized_pt = vp.realized_pt / std(vp.realized_pt)

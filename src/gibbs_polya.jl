@@ -152,6 +152,8 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
 
 
 
+    # The raw tree is fixed throughout the component updates.
+    s = std(vp.realized_pt.ρ)
     for (comp_idx, comp) in enumerate(neal8polya.components)
         if isempty(comp)
             continue
@@ -185,7 +187,7 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
             impute_zbar!(vp, sample)
         end
 
-        vp.realized_pt = vp.realized_pt / std(vp.realized_pt)
+        vp.realized_pt = vp.realized_pt / (abs(vp.realized_pt.σ) * s)
     end
     sample_α!(neal8polya)   # update concentration parameter α 
 

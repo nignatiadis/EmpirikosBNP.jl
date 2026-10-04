@@ -109,18 +109,18 @@ end
 function sample_tree_and_scales!(gc::NealAlgorithm8Polya)
     vp = gc.vp
     raw_tree = vp.realized_pt.ρ
-    old_std = std(raw_tree)
+    s = std(raw_tree)
 
     # Build the conjugate tree proposal at the current transformed observations.
     # The matching variance rescaling below preserves these observations.
     zero_offsets!(vp.base_polya)
     for i in eachindex(gc.data)
-        variance = gc.components[gc.assignments[i]].param
-        posterior!(gc.data[i], vp.base_polya, old_std / sqrt(variance))
+        σ² = gc.components[gc.assignments[i]].param
+        posterior!(gc.data[i], vp.base_polya, s / sqrt(σ²))
     end
     proposed_tree = rand(vp.base_polya)
-    new_std = std(proposed_tree)
-    ratio = (new_std / old_std)^2
+    s′ = std(proposed_tree)
+    ratio = (s′ / s)^2
 
     # The tree prior and likelihood cancel against the proposal ratio.
     # Each occupied variance atom contributes its prior ratio and one
@@ -135,7 +135,7 @@ function sample_tree_and_scales!(gc::NealAlgorithm8Polya)
             isempty(comp) && continue
             gc.components[k] = @set comp.param = ratio * comp.param
         end
-        vp.realized_pt = proposed_tree / new_std
+        vp.realized_pt = proposed_tree / s′
         return true
     end
     false

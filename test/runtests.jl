@@ -11,6 +11,7 @@ include("configuration_logpdf.jl")
 include("leaf_probabilities.jl")
 include("assignment_weights.jl")
 include("neal2_singletons.jl")
+include("neal2_cleanup.jl")
 
 Random.seed!(1)
 

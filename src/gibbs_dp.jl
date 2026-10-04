@@ -1,6 +1,8 @@
 
 abstract type AbstractNealAlgorithm end
 
+_should_cleanup(gc::AbstractNealAlgorithm) = length(gc.empties) > 100
+
 # Weights need only be proportional to probabilities. A finite maximum ensures
 # at least one unit weight; -Inf denotes an impossible category.
 function _weights_from_logprobs(log_probs::AbstractVector{<:AbstractFloat})
@@ -26,7 +28,7 @@ function StatsBase.sample!(gc::AbstractNealAlgorithm)
     end
     sample_α!(gc)   # update concentration parameter α 
     # remark: for the Polya Tree algorithm, also need to update the Polya Tree & Zs.
-    if length(gc.empties) > 100
+    if _should_cleanup(gc)
         cleanup_components!(gc)
     end
     return gc
@@ -46,6 +48,9 @@ mutable struct NealAlgorithm2{D, T,  S, W <: AbstractWrappedEBSample{S}}  <: Abs
 end
 
 track_parameters(::NealAlgorithm2) = true 
+
+# Avoid scanning accumulated empty slots in the next assignment sweep.
+_should_cleanup(::NealAlgorithm2) = true
 
 # basically: 
 # recode

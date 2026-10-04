@@ -62,7 +62,7 @@ end
 
 function NealAlgorithm2(
     Ss::AbstractVector;
-    α_dist =  Gamma(0.001,100.0),
+    α_dist = Gamma(2, 2.0), # Shape 2, rate 0.5; Gamma uses shape-scale.
     prior = _default_prior(Ss)
     ) 
     all_Ss = wrap(Ss)
@@ -210,7 +210,7 @@ track_parameters(::NealAlgorithm8) = true
 function NealAlgorithm8(
     Ss::AbstractVector;
     m = 10,
-    α_dist =  Gamma(0.001,100.0),
+    α_dist = Gamma(2, 2.0), # Shape 2, rate 0.5; Gamma uses shape-scale.
     prior = _default_prior(Ss)
     ) 
     all_Ss = wrap(Ss)
@@ -313,7 +313,7 @@ track_parameters(::NealAlgorithm2DPGM) = true
 
 function NealAlgorithm2DPGM(
     Ss::AbstractVector;
-    α_dist =  Gamma(0.001,100.0),
+    α_dist = Gamma(2, 2.0), # Shape 2, rate 0.5; Gamma uses shape-scale.
     prior, # base measure
     Ap1_dist      # prior for A+1 (for now)
     ) 

@@ -95,7 +95,7 @@ last_A_acceptance_rate(gc::NealAlgorithm2GaussianConvolution) =
 
 function NealAlgorithm2GaussianConvolution(
     Ss::AbstractVector{<:Empirikos.AbstractNormalSample};
-    α_dist=Gamma(0.001, 100.0),
+    α_dist=Gamma(2, 2.0), # Shape 2, rate 0.5; Gamma uses shape-scale.
     prior,
     A_dist,
     A_init=draw_interior(A_dist),

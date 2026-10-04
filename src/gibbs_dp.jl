@@ -37,7 +37,7 @@ end
 #---------------------------------------
 # Algorithm 2 
 #---------------------------------------
-mutable struct NealAlgorithm2{D, T,  S, W <: AbstractWrappedEBSample{S}}  <: AbstractNealAlgorithm
+mutable struct NealAlgorithm2{D, T, S, W <: AbstractWrappedEBSample{S}, L} <: AbstractNealAlgorithm
     prior::D
     α_dist::T
     logα::Float64
@@ -45,6 +45,7 @@ mutable struct NealAlgorithm2{D, T,  S, W <: AbstractWrappedEBSample{S}}  <: Abs
     empties::Vector{Int}
     assignments::Vector{Int}
     data::Vector{S}
+    prior_logpdfs::Vector{L}
 end
 
 track_parameters(::NealAlgorithm2) = true 
@@ -78,9 +79,20 @@ function NealAlgorithm2(
              [all_Ss, empty_Ss],
              [2],
              ones(Int, length(Ss)),
-             Ss)
+             Ss,
+             logpdf.(Ref(prior), Ss))
 end
 
+"""
+    refresh_prior_logpdfs!(gc::NealAlgorithm2)
+
+Refresh the cached prior-predictive log densities after changing `gc.data` or
+`gc.prior`. This does not rebuild component sufficient statistics for changed data.
+"""
+function refresh_prior_logpdfs!(gc::NealAlgorithm2)
+    gc.prior_logpdfs .= logpdf.(Ref(gc.prior), gc.data)
+    gc
+end
 
 
 
@@ -158,7 +170,6 @@ end
 
 
 function StatsBase.sample!(gc::NealAlgorithm2, i::Int)
-    prior = gc.prior
     x = gc.data[i]
     old_comp = sub(gc.components[gc.assignments[i]], x)
     gc.components[gc.assignments[i]] = old_comp
@@ -173,7 +184,7 @@ function StatsBase.sample!(gc::NealAlgorithm2, i::Int)
          for comp
          in gc.components]
 
-    log_probs[gc.empties[1]] = logpdf(prior, x) + gc.logα
+    log_probs[gc.empties[1]] = gc.prior_logpdfs[i] + gc.logα
 
     new_k = sample(_weights_from_logprobs(log_probs))
     gc.components[new_k] = add(gc.components[new_k], x)

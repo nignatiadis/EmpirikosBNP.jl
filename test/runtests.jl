@@ -12,6 +12,7 @@ include("leaf_probabilities.jl")
 include("assignment_weights.jl")
 include("neal2_singletons.jl")
 include("neal2_cleanup.jl")
+include("neal2_prior_cache.jl")
 
 Random.seed!(1)
 

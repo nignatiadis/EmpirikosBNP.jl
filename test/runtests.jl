@@ -13,6 +13,7 @@ include("assignment_weights.jl")
 include("neal2_singletons.jl")
 include("neal2_cleanup.jl")
 include("neal2_prior_cache.jl")
+include("polya_cleanup.jl")
 
 Random.seed!(1)
 

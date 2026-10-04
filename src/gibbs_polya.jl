@@ -13,6 +13,9 @@ mutable struct NealAlgorithm8Polya{D,T,S,W<:AbstractWrappedEBSample,F,V,K} <:
     scratch::K
 end
 
+# Avoid scanning accumulated empty slots in the next assignment sweep.
+_should_cleanup(::NealAlgorithm8Polya) = true
+
 function NealAlgorithm8Polya(
     config_samples::AbstractVector;
     base_polya,
@@ -158,7 +161,7 @@ function StatsBase.sample!(neal8polya::NealAlgorithm8Polya)
     sample_α!(neal8polya)   # update concentration parameter α 
 
 
-    if length(neal8polya.empties) > 20
+    if _should_cleanup(neal8polya)
         cleanup_components!(neal8polya)
     end
     return neal8polya

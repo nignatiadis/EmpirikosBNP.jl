@@ -10,6 +10,7 @@ include("logpdf_evaluator.jl")
 include("configuration_logpdf.jl")
 include("leaf_probabilities.jl")
 include("assignment_weights.jl")
+include("neal2_singletons.jl")
 
 Random.seed!(1)
 

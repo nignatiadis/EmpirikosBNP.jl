@@ -176,6 +176,8 @@ function StatsBase.sample!(gc::NealAlgorithm2, i::Int)
 
     # clean up empties
     if new_k == gc.empties[1]
+        # Later assignments in this sweep must see a draw from the singleton posterior.
+        sample_component_param!(gc, new_k)
         popfirst!(gc.empties)
         if isempty(gc.empties)
             empty_Ss = empty(gc.components[1])
@@ -411,6 +413,8 @@ function StatsBase.sample!(gc::NealAlgorithm2DPGM, i::Int)
 
     # clean up empties
     if new_k == gc.empties[1]
+        # Later assignments in this sweep must see a draw from the singleton posterior.
+        sample_component_param!(gc, new_k)
         popfirst!(gc.empties)
         if isempty(gc.empties)
             empty_Ss = empty(gc.components[1])

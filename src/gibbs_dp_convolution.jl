@@ -183,6 +183,8 @@ function StatsBase.sample!(gc::NealAlgorithm2GaussianConvolution, i::Int)
     gc.assignments[i] = new_k
 
     if new_k == first(gc.empties)
+        # Later assignments in this sweep must see a draw from the singleton posterior.
+        sample_component_param!(gc, new_k)
         popfirst!(gc.empties)
         if isempty(gc.empties)
             empty_Ss = empty(gc.components[1])

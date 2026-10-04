@@ -9,6 +9,7 @@ using StatsBase
 include("logpdf_evaluator.jl")
 include("configuration_logpdf.jl")
 include("leaf_probabilities.jl")
+include("assignment_weights.jl")
 
 Random.seed!(1)
 

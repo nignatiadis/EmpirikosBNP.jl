@@ -1,6 +1,17 @@
 
 abstract type AbstractNealAlgorithm end
 
+# Weights need only be proportional to probabilities. A finite maximum ensures
+# at least one unit weight; -Inf denotes an impossible category.
+function _weights_from_logprobs(log_probs::AbstractVector{<:AbstractFloat})
+    isempty(log_probs) && throw(ArgumentError("log weights must not be empty"))
+    max_logprob = maximum(log_probs)
+    isfinite(max_logprob) || throw(ArgumentError(
+        "log weights must contain a finite value and no NaN or +Inf",
+    ))
+    Weights(exp.(log_probs .- max_logprob))
+end
+
 
 function StatsBase.sample!(gc::AbstractNealAlgorithm)
     isempty(gc.data) &&
@@ -159,7 +170,7 @@ function StatsBase.sample!(gc::NealAlgorithm2, i::Int)
 
     log_probs[gc.empties[1]] = logpdf(prior, x) + gc.logα
 
-    new_k = sample(Weights(exp.(log_probs)))
+    new_k = sample(_weights_from_logprobs(log_probs))
     gc.components[new_k] = add(gc.components[new_k], x)
     gc.assignments[i] = new_k
 
@@ -245,7 +256,7 @@ function StatsBase.sample!(gc::NealAlgorithm8, i::Int)
          ]
      )
 
-    sample_k = sample(Weights(exp.(log_probs)))
+    sample_k = sample(_weights_from_logprobs(log_probs))
 
     # create new component
     if sample_k <= m
@@ -394,7 +405,7 @@ function StatsBase.sample!(gc::NealAlgorithm2DPGM, i::Int)
 
     log_probs[gc.empties[1]] = logpdf(prior, x) + gc.logα
 
-    new_k = sample(Weights(exp.(log_probs)))
+    new_k = sample(_weights_from_logprobs(log_probs))
     gc.components[new_k] = add(gc.components[new_k], x)
     gc.assignments[i] = new_k
 

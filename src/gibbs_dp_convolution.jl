@@ -177,8 +177,7 @@ function StatsBase.sample!(gc::NealAlgorithm2GaussianConvolution, i::Int)
 
     log_probs[first(gc.empties)] = logpdf(prior, x) + gc.logα
 
-    max_lp = maximum(log_probs)
-    new_k = sample(Weights(exp.(log_probs .- max_lp)))
+    new_k = sample(_weights_from_logprobs(log_probs))
 
     gc.components[new_k] = add(gc.components[new_k], x)
     gc.assignments[i] = new_k

@@ -73,7 +73,7 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)
         ],
     )
 
-    sample_k = sample(Weights(exp.(log_probs)))
+    sample_k = sample(_weights_from_logprobs(log_probs))
 
     # create new component
     if sample_k <= m

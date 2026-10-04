@@ -46,8 +46,13 @@ function _grid_points(polya::PolyaTreeDistribution)
 end 
 
 function kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int)
-    searchsortedlast(polya.stored_splits[j], x) + 1
-end 
+    # Quantile splits contain no NaNs. Preserve total ordering for NaNs and signed zeros.
+    splits = polya.stored_splits[j]
+    if isnan(x) || iszero(x)
+        return searchsortedlast(splits, x) + 1
+    end
+    searchsortedlast(splits, x; lt = <) + 1
+end
 
 function _ns(polya::PolyaTreeDistribution, x::AbstractVector) 
     map(j -> counts(kfun.(Ref(polya), x, j), 1:2^j), 1:polya.J)

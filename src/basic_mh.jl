@@ -87,19 +87,22 @@ function sample_variance!(vp, data=vp.data)
     steps = vp.variance_mh.mh_steps
 
     var_iid = VarianceIIDSample(IIDSample(data), vp.realized_pt)
+    steps <= 0 && return transition_prev
+    current_loglik = loglikelihood(var_iid, transition_prev)
 
     for _ in Base.OneTo(steps)
         candidate = rand(proposal_d)
+        candidate_loglik = loglikelihood(var_iid, candidate)
 
         logα = logpdf(proposal_d, transition_prev) -  
                logpdf(proposal_d, candidate) +
-               loglikelihood(var_iid, candidate) -
-               loglikelihood(var_iid, transition_prev) + 
+               candidate_loglik - current_loglik +
                logpdf(vp.σ²_prior, candidate) -
                logpdf(vp.σ²_prior, transition_prev)
         
         if -Random.randexp() < logα
             transition_prev = candidate 
+            current_loglik = candidate_loglik
         end 
     end 
     vp.σ² = transition_prev
@@ -116,18 +119,21 @@ function impute_zbar!(vp, config_sample::ConfigurationSample)
 
     proposal_d = proposal_dist(vp.imputation_mh, config_sample, vp.σ²) 
     steps = vp.imputation_mh.mh_steps
+    steps <= 0 && return transition_prev
+    current_loglik = logpdf(realized_pt, config_sample, transition_prev)
 
 
     for _ in Base.OneTo(steps)
         candidate = rand(proposal_d)
+        candidate_loglik = logpdf(realized_pt, config_sample, candidate)
 
         logα = logpdf(proposal_d, transition_prev) -  
                logpdf(proposal_d, candidate) +
-               logpdf(realized_pt, config_sample, candidate) -
-               logpdf(realized_pt, config_sample, transition_prev)
+               candidate_loglik - current_loglik
 
         if -Random.randexp() < logα
             transition_prev = candidate 
+            current_loglik = candidate_loglik
         end 
     end 
     config_sample.Z̄ = transition_prev

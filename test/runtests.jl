@@ -16,6 +16,8 @@ include("neal2_prior_cache.jl")
 include("polya_cleanup.jl")
 include("polya_tree_scale.jl")
 include("polya_normalization.jl")
+include("polya_split_search.jl")
+include("polya_mh_cache.jl")
 
 Random.seed!(1)
 

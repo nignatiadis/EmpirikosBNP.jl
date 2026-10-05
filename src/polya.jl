@@ -3,7 +3,40 @@ abstract type DistributionVariate <: Distributions.VariateForm end
 kfun(base::Distribution, x::AbstractFloat, j::Int) = min(floor(Int, 2^j * cdf(base, x)) + 1, 2^j)
 _ns(base::Distribution, J::Int, x::AbstractVector) = map(j -> counts(kfun.(base, x, j), 1:2^j), 1:J)
 
-Base.@kwdef struct PolyaTreeDistribution{D,F,O,V} <: Distribution{DistributionVariate,Continuous}
+# Uniform grid over the finest splits. Cells are narrower than the gaps between
+# splits; each stores the number of splits at or below its left edge.
+struct SplitLookup
+    origin::Float64
+    inv_width::Float64
+    counts::Vector{UInt16}
+end
+
+SplitLookup(splits) = nothing
+
+function SplitLookup(splits::Vector{Float64})
+    width = minimum(diff(splits); init = Inf) / 2
+    (isfinite(width) && width > 0 && isfinite(splits[1])) || return nothing
+    origin = splits[1] - width
+    ncells = (splits[end] - origin) / width + 2
+    ncells <= typemax(UInt16) || return nothing
+    counts = [UInt16(searchsortedlast(splits, origin + (k - 1) * width)) for k in 1:ceil(Int, ncells)]
+    SplitLookup(origin, 1 / width, counts)
+end
+
+# Same result as searchsortedlast(splits, x; lt = <) for non-NaN x. The grid guess
+# is checked against the splits themselves, falling back to a search when it misses.
+@inline function _searchsortedlast(lookup::SplitLookup, splits::Vector{Float64}, x::Float64)
+    n = length(splits)
+    cell = clamp((x - lookup.origin) * lookup.inv_width, 0.0, length(lookup.counts) - 1.0)
+    index = Int(@inbounds lookup.counts[unsafe_trunc(Int, cell) + 1])
+    index += (index < n) & (@inbounds(splits[min(index + 1, n)]) <= x)
+    below = (index == 0) | (@inbounds(splits[max(index, 1)]) <= x)
+    above = (index == n) | (x < @inbounds(splits[min(index + 1, n)]))
+    below & above && return index
+    searchsortedlast(splits, x; lt = <)
+end
+
+Base.@kwdef struct PolyaTreeDistribution{D,F,O,V,L} <: Distribution{DistributionVariate,Continuous}
     J::Int64 = 7
     base::D
     α::Float64 = 10.0
@@ -12,6 +45,7 @@ Base.@kwdef struct PolyaTreeDistribution{D,F,O,V} <: Distribution{DistributionVa
     median_centered::Bool = true
     symmetrized::Bool = false
     stored_splits::V =  map(j -> quantile.(Ref(base), (1:(2^j-1)) ./ 2^j), 1:J)
+    split_lookup::L = J == 0 ? nothing : SplitLookup(stored_splits[J])
 end
 
 function Base.show(io::IO, d::PolyaTreeDistribution)
@@ -50,6 +84,10 @@ function kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int)
     splits = polya.stored_splits[j]
     if isnan(x) || iszero(x)
         return searchsortedlast(splits, x) + 1
+    end
+    lookup = polya.split_lookup
+    if j == polya.J && lookup isa SplitLookup && x isa Float64
+        return _searchsortedlast(lookup, splits, x) + 1
     end
     searchsortedlast(splits, x; lt = <) + 1
 end

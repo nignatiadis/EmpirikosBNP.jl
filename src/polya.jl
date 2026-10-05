@@ -3,37 +3,51 @@ abstract type DistributionVariate <: Distributions.VariateForm end
 kfun(base::Distribution, x::AbstractFloat, j::Int) = min(floor(Int, 2^j * cdf(base, x)) + 1, 2^j)
 _ns(base::Distribution, J::Int, x::AbstractVector) = map(j -> counts(kfun.(base, x, j), 1:2^j), 1:J)
 
-# Uniform grid over the finest splits. Cells are narrower than the gaps between
-# splits; each stores the number of splits at or below its left edge.
+# Exact grid over the finest splits, only when every split is positive, as for
+# folded bases; other trees use a binary search. Cells have width 1 / scale, a
+# power of two, so for x >= 0 the product x * scale is exact and cell k is exactly
+# [k / scale, (k + 1) / scale). Cells are narrower than the gaps between splits,
+# so each holds at most one, and no check against the splits is needed.
+struct SplitCell
+    split::Float64 # the split in this cell, or NaN, which no x reaches
+    below::Int     # number of splits below this cell
+end
+
 struct SplitLookup
-    origin::Float64
-    inv_width::Float64
-    counts::Vector{UInt16}
+    scale::Float64
+    cells::Vector{SplitCell}
 end
 
 SplitLookup(splits) = nothing
 
 function SplitLookup(splits::Vector{Float64})
-    width = minimum(diff(splits); init = Inf) / 2
-    (isfinite(width) && width > 0 && isfinite(splits[1])) || return nothing
-    origin = splits[1] - width
-    ncells = (splits[end] - origin) / width + 2
+    gap = minimum(diff(splits); init = Inf)
+    (isfinite(gap) && gap > 0 && splits[1] > 0 && isfinite(splits[end])) || return nothing
+    width = exp2(floor(log2(gap / 2)))
+    # Two splits in one cell would be closer than its width.
+    width < gap || return nothing
+    scale = 1 / width
+    # The last cell starts above every split and receives all larger x.
+    ncells = floor(Int, splits[end] * scale) + 2
     ncells <= typemax(UInt16) || return nothing
-    counts = [UInt16(searchsortedlast(splits, origin + (k - 1) * width)) for k in 1:ceil(Int, ncells)]
-    SplitLookup(origin, 1 / width, counts)
+    cells = map(0:(ncells - 1)) do k
+        first = searchsortedfirst(splits, k * width)
+        inside = first <= length(splits) && splits[first] < (k + 1) * width
+        SplitCell(inside ? splits[first] : NaN, first - 1)
+    end
+    SplitLookup(scale, cells)
 end
 
-# Same result as searchsortedlast(splits, x; lt = <) for non-NaN x. The grid guess
-# is checked against the splits themselves, falling back to a search when it misses.
-@inline function _searchsortedlast(lookup::SplitLookup, splits::Vector{Float64}, x::Float64)
-    n = length(splits)
-    cell = clamp((x - lookup.origin) * lookup.inv_width, 0.0, length(lookup.counts) - 1.0)
-    index = Int(@inbounds lookup.counts[unsafe_trunc(Int, cell) + 1])
-    index += (index < n) & (@inbounds(splits[min(index + 1, n)]) <= x)
-    below = (index == 0) | (@inbounds(splits[max(index, 1)]) <= x)
-    above = (index == n) | (x < @inbounds(splits[min(index + 1, n)]))
-    below & above && return index
-    searchsortedlast(splits, x; lt = <)
+# Same result as searchsortedlast(splits, x; lt = <) for non-NaN x. Negative x
+# land in the first cell, which no split precedes.
+@inline function _searchsortedlast(lookup::SplitLookup, x::Float64)
+    cells = lookup.cells
+    last_cell = length(cells) - 1.0
+    v = x * lookup.scale
+    v = ifelse(v >= 0.0, v, 0.0)
+    v = ifelse(v < last_cell, v, last_cell)
+    c = @inbounds cells[unsafe_trunc(Int, v) + 1]
+    c.below + (c.split <= x)
 end
 
 Base.@kwdef struct PolyaTreeDistribution{D,F,O,V,L} <: Distribution{DistributionVariate,Continuous}
@@ -87,7 +101,7 @@ function kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int)
     end
     lookup = polya.split_lookup
     if j == polya.J && lookup isa SplitLookup && x isa Float64
-        return _searchsortedlast(lookup, splits, x) + 1
+        return _searchsortedlast(lookup, x) + 1
     end
     searchsortedlast(splits, x; lt = <) + 1
 end
@@ -133,6 +147,11 @@ function _log_leaf_probs(θs)
 end
 
 function _log_prob(pt::PolyaTree, x)
+    lookup = pt.pt.split_lookup
+    # As every split is positive, kfun's ordering of signed zeros changes nothing.
+    if lookup isa SplitLookup && x isa Float64 && !isnan(x) && length(pt.θs) == pt.pt.J
+        return @inbounds pt.log_leaf_probs[_searchsortedlast(lookup, x) + 1]
+    end
     J = length(pt.θs)
     index = J == 0 ? 1 : kfun(pt.pt, x, J)
     pt.log_leaf_probs[index]

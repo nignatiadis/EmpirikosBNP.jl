@@ -503,7 +503,8 @@ end
 
 # A Student-t base density is c - (ν + 1) / 2 * log1p(((x - μ₀) / σ₀)^2 / ν) for
 # each observation, where c is its value at μ₀. The log1p terms are summed as one
-# log of the product of the (1 + u): the same density, rounded differently.
+# log of the product of the (1 + u), and u is computed as (x - μ₀)^2 / (σ₀^2 ν)
+# with one multiplication: the same density, rounded differently.
 # Other bases, and products that overflow, use the term-by-term sum.
 function Distributions.logpdf(
     d::Distributions.LocationScale{<:Any,<:Any,<:PolyaTree},
@@ -515,13 +516,14 @@ function Distributions.logpdf(
     (student_t === nothing || isinf(student_t[3])) && return _sum_logpdf(d, config, z̄)
     μ₀, σ₀, ν = student_t
     symmetrized = pt.pt.symmetrized
+    inv_σ₀²ν = 1 / (σ₀^2 * ν)
     leaf_sum = 0.0
     product = 1.0
     for z in config.configuration
         x = ((z + z̄) - μ) / σ
         x = symmetrized ? abs(x) : x
         leaf_sum += _log_prob(pt, x)
-        product *= 1 + ((x - μ₀) / σ₀)^2 / ν
+        product *= 1 + (x - μ₀)^2 * inv_σ₀²ν
     end
     isfinite(product) || return _sum_logpdf(d, config, z̄)
     constant = pt.pt.J * log(2) + pt.base_logpdf(μ₀) - log(abs(σ))

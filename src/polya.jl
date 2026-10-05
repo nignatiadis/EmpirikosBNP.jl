@@ -460,8 +460,53 @@ function Distributions.logpdf(
     config::ConfigurationSample,
     z̄ = config.Z̄,
 )
+    _sum_logpdf(d, config, z̄)
+end
+
+function _sum_logpdf(d, config::ConfigurationSample, z̄)
     logdensity = _logpdf_evaluator(d)
     sum(z -> logdensity(z + z̄), config.configuration; init = 0.0)
+end
+
+# Location, scale and degrees of freedom of a Student-t tree base, or nothing.
+_student_t_parameters(base::TDist{Float64}) = (0.0, 1.0, dof(base))
+_student_t_parameters(base::Distributions.LocationScale{Float64,<:Any,TDist{Float64}}) =
+    (base.μ, base.σ, dof(base.ρ))
+_student_t_parameters(base) = nothing
+
+function _student_t_parameters(tree::PolyaTreeDistribution)
+    base = tree.base
+    if tree.symmetrized && base isa Empirikos.Folded
+        base = Empirikos.unfold(base)
+    end
+    _student_t_parameters(base)
+end
+
+# A Student-t base density is c - (ν + 1) / 2 * log1p(((x - μ₀) / σ₀)^2 / ν) for
+# each observation, where c is its value at μ₀. The log1p terms are summed as one
+# log of the product of the (1 + u): the same density, rounded differently.
+# Other bases, and products that overflow, use the term-by-term sum.
+function Distributions.logpdf(
+    d::Distributions.LocationScale{<:Any,<:Any,<:PolyaTree},
+    config::ConfigurationSample{<:AbstractVector{Float64}},
+    z̄::Float64 = config.Z̄,
+)
+    μ, σ, pt = params(d)
+    student_t = _student_t_parameters(pt.pt)
+    (student_t === nothing || isinf(student_t[3])) && return _sum_logpdf(d, config, z̄)
+    μ₀, σ₀, ν = student_t
+    symmetrized = pt.pt.symmetrized
+    leaf_sum = 0.0
+    product = 1.0
+    for z in config.configuration
+        x = ((z + z̄) - μ) / σ
+        x = symmetrized ? abs(x) : x
+        leaf_sum += _log_prob(pt, x)
+        product *= 1 + ((x - μ₀) / σ₀)^2 / ν
+    end
+    isfinite(product) || return _sum_logpdf(d, config, z̄)
+    constant = pt.pt.J * log(2) + pt.base_logpdf(μ₀) - log(abs(σ))
+    leaf_sum + length(config.configuration) * constant - (ν + 1) / 2 * log(product)
 end
 
 

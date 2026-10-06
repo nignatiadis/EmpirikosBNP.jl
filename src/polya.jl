@@ -682,6 +682,23 @@ function posterior!(samples::AbstractVector{<:AbstractIIDSample}, model::PolyaTr
     end
 end
 
+# The offsets of posterior!(samples[i], model, σs[i]) for every i, starting from
+# zero. Only the finest bins are counted; each parent is then the sum of its two
+# children, which gives the same counts as incrementing every level.
+function _posterior_offsets!(model::PolyaTreeDistribution, samples, σs)
+    zero_offsets!(model)
+    model.J == 0 && return model
+    offsets = model.offsets
+    for (sample, σ) in zip(samples, σs), r in iid_samples(sample)
+        x = r * σ
+        offsets[model.J][kfun(model, model.symmetrized ? abs(x) : x, model.J)] += 1
+    end
+    for j in (model.J - 1):-1:1, k in eachindex(offsets[j])
+        offsets[j][k] = offsets[j + 1][2k - 1] + offsets[j + 1][2k]
+    end
+    model
+end
+
 struct VarianceIIDSample{D, V} <: Empirikos.EBayesSample{V}
     iidsample::V
     base::D 

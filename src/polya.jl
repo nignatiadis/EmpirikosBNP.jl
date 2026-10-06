@@ -38,6 +38,10 @@ function SplitLookup(splits::Vector{Float64})
     SplitLookup(scale, cells)
 end
 
+# searchsortedlast(splits, x; lt = <), through the lookup when there is one.
+_searchsortedlast(lookup, splits, x) = searchsortedlast(splits, x; lt = <)
+_searchsortedlast(lookup::SplitLookup, splits, x::Float64) = _searchsortedlast(lookup, x)
+
 # Same result as searchsortedlast(splits, x; lt = <) for non-NaN x. Negative x
 # land in the first cell, which no split precedes.
 @inline function _searchsortedlast(lookup::SplitLookup, x::Float64)
@@ -99,10 +103,7 @@ function kfun(polya::PolyaTreeDistribution, x::AbstractFloat, j::Int)
     if isnan(x) || iszero(x)
         return searchsortedlast(splits, x) + 1
     end
-    lookup = polya.split_lookup
-    if j == polya.J && lookup isa SplitLookup && x isa Float64
-        return _searchsortedlast(lookup, x) + 1
-    end
+    j == polya.J && return _searchsortedlast(polya.split_lookup, splits, x) + 1
     searchsortedlast(splits, x; lt = <) + 1
 end
 
@@ -118,6 +119,7 @@ struct PolyaTree{P,T,F,L} <: Distribution{Univariate, Continuous}
 end
 
 function PolyaTree(pt, θs)
+    length(θs) == pt.J || throw(ArgumentError("A Polya tree needs one weight layer per level."))
     base_logpdf = pt.symmetrized ?
         _symmetrized_base_logpdf_evaluator(pt.base) : _logpdf_evaluator(pt.base)
     PolyaTree(pt, θs, base_logpdf, _log_leaf_probs(θs))
@@ -146,12 +148,14 @@ function _log_leaf_probs(θs)
     end
 end
 
-function _log_prob(pt::PolyaTree, x)
-    lookup = pt.pt.split_lookup
-    # As every split is positive, kfun's ordering of signed zeros changes nothing.
-    if lookup isa SplitLookup && x isa Float64 && !isnan(x) && length(pt.θs) == pt.pt.J
-        return @inbounds pt.log_leaf_probs[_searchsortedlast(lookup, x) + 1]
-    end
+_log_prob(pt::PolyaTree, x) = _log_prob(pt.pt.split_lookup, pt, x)
+_log_prob(lookup, pt::PolyaTree, x) = _searched_log_prob(pt, x)
+
+# As every split is positive, kfun's ordering of signed zeros changes nothing.
+_log_prob(lookup::SplitLookup, pt::PolyaTree, x::Float64) = isnan(x) ?
+    _searched_log_prob(pt, x) : @inbounds pt.log_leaf_probs[_searchsortedlast(lookup, x) + 1]
+
+function _searched_log_prob(pt::PolyaTree, x)
     J = length(pt.θs)
     index = J == 0 ? 1 : kfun(pt.pt, x, J)
     pt.log_leaf_probs[index]
@@ -487,19 +491,26 @@ function _sum_logpdf(d, config::ConfigurationSample, z̄)
     sum(z -> logdensity(z + z̄), config.configuration; init = 0.0)
 end
 
-# Location, scale and degrees of freedom of a Student-t tree base, or nothing.
-_student_t_parameters(base::TDist{Float64}) = (0.0, 1.0, dof(base))
-_student_t_parameters(base::Distributions.LocationScale{Float64,<:Any,TDist{Float64}}) =
-    (base.μ, base.σ, dof(base.ρ))
-_student_t_parameters(base) = nothing
-
-function _student_t_parameters(tree::PolyaTreeDistribution)
-    base = tree.base
-    if tree.symmetrized && base isa Empirikos.Folded
-        base = Empirikos.unfold(base)
-    end
-    _student_t_parameters(base)
+# Location, scale and degrees of freedom of a Student-t tree base with finite ν.
+struct StudentTKernel
+    μ₀::Float64
+    σ₀::Float64
+    ν::Float64
 end
+
+# The Student-t kernel of a tree's base, or nothing for other bases.
+_base_kernel(tree::PolyaTreeDistribution) =
+    _base_kernel(tree.symmetrized ? _unfold(tree.base) : tree.base)
+_base_kernel(base) = nothing
+_base_kernel(base::TDist{Float64}) = _student_t_kernel(0.0, 1.0, dof(base))
+_base_kernel(base::Distributions.LocationScale{Float64,<:Any,TDist{Float64}}) =
+    _student_t_kernel(base.μ, base.σ, dof(base.ρ))
+
+# ν = Inf is a Normal base, summed term by term.
+_student_t_kernel(μ₀, σ₀, ν) = isinf(ν) ? nothing : StudentTKernel(μ₀, σ₀, ν)
+
+_unfold(base::Empirikos.Folded) = Empirikos.unfold(base)
+_unfold(base) = base
 
 # A Student-t base density is c - (ν + 1) / 2 * log1p(((x - μ₀) / σ₀)^2 / ν) for
 # each observation, where c is its value at μ₀. The log1p terms are summed as one
@@ -511,10 +522,14 @@ function Distributions.logpdf(
     config::ConfigurationSample{<:AbstractVector{Float64}},
     z̄::Float64 = config.Z̄,
 )
+    _configuration_logpdf(_base_kernel(d.ρ.pt), d, config, z̄)
+end
+
+_configuration_logpdf(::Nothing, d, config, z̄) = _sum_logpdf(d, config, z̄)
+
+function _configuration_logpdf(kernel::StudentTKernel, d, config, z̄)
     μ, σ, pt = params(d)
-    student_t = _student_t_parameters(pt.pt)
-    (student_t === nothing || isinf(student_t[3])) && return _sum_logpdf(d, config, z̄)
-    μ₀, σ₀, ν = student_t
+    (; μ₀, σ₀, ν) = kernel
     symmetrized = pt.pt.symmetrized
     inv_σ₀²ν = 1 / (σ₀^2 * ν)
     leaf_sum = 0.0

@@ -53,7 +53,7 @@ end
         (TDist(8) * 1.5, false),
     )
         tree = rand(rng, PolyaTreeDistribution(; base, symmetrized, J = 8, median_centered = false))
-        @test E._student_t_parameters(tree.pt) !== nothing
+        @test E._base_kernel(tree.pt) isa E.StudentTKernel
         for d in (tree / std(tree), 0.7 + 1.2 * tree, -2.0 * tree), n in (0, 1, 12, 129)
             for scale in (1e-3, 1.0, 50.0)
                 values = scale .* randn(rng, n)
@@ -76,7 +76,7 @@ end
     # Other bases keep the term-by-term sum.
     tree = rand(rng, PolyaTreeDistribution(; base = Empirikos.fold(Normal()),
         symmetrized = true, J = 8, median_centered = false))
-    @test E._student_t_parameters(tree.pt) === nothing
+    @test E._base_kernel(tree.pt) === nothing
     config = E.ConfigurationSample(E.IIDSample(randn(rng, 12)))
     d = 1.3 * tree
     @test logpdf(d, config) === E._sum_logpdf(d, config, config.Z̄)

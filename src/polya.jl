@@ -3,18 +3,20 @@ abstract type DistributionVariate <: Distributions.VariateForm end
 kfun(base::Distribution, x::AbstractFloat, j::Int) = min(floor(Int, 2^j * cdf(base, x)) + 1, 2^j)
 _ns(base::Distribution, J::Int, x::AbstractVector) = map(j -> counts(kfun.(base, x, j), 1:2^j), 1:J)
 
-# Exact grid over the finest splits, only when every split is positive, as for
-# folded bases; other trees use a binary search. Cells have width 1 / scale, a
-# power of two, so for x >= 0 the product x * scale is exact and cell k is exactly
-# [k / scale, (k + 1) / scale). Cells are narrower than the gaps between splits,
-# so each holds at most one, and no check against the splits is needed.
+# Exact grid over the finest splits. Cells have width 1 / scale, a power of two,
+# and run from the most negative x to the most positive, with -0.0 in the last
+# negative cell and 0.0 in the first nonnegative one. As negation and scaling by a
+# power of two are exact, the cell of x is found without rounding and is ordered as
+# x is. With at most one split per cell, splits in earlier cells lie below x and
+# splits in later cells above it, so only the split in x's own cell is compared.
 struct SplitCell
     split::Float64 # the split in this cell, or NaN, which no x reaches
-    below::Int     # number of splits below this cell
+    below::Int     # number of splits in earlier cells
 end
 
 struct SplitLookup
     scale::Float64
+    negative::Int # number of cells for negative x and -0.0
     cells::Vector{SplitCell}
 end
 
@@ -22,35 +24,40 @@ SplitLookup(splits) = nothing
 
 function SplitLookup(splits::Vector{Float64})
     gap = minimum(diff(splits); init = Inf)
-    (isfinite(gap) && gap > 0 && splits[1] > 0 && isfinite(splits[end])) || return nothing
-    width = exp2(floor(log2(gap / 2)))
-    # Two splits in one cell would be closer than its width.
-    width < gap || return nothing
-    scale = 1 / width
-    # The last cell starts above every split and receives all larger x.
-    ncells = floor(Int, splits[end] * scale) + 2
-    ncells <= typemax(UInt16) || return nothing
-    cells = map(0:(ncells - 1)) do k
-        first = searchsortedfirst(splits, k * width)
-        inside = first <= length(splits) && splits[first] < (k + 1) * width
-        SplitCell(inside ? splits[first] : NaN, first - 1)
+    (isfinite(gap) && gap > 0 && isfinite(splits[1]) && isfinite(splits[end])) || return nothing
+    scale = exp2(-floor(log2(gap / 2)))
+    # The last cell lies beyond every split, so NaN, which sorts last, counts them all.
+    negative = floor(Int, max(-splits[1], 0.0) * scale) + 1
+    positive = floor(Int, max(splits[end], 0.0) * scale) + 2
+    negative + positive <= 2^16 || return nothing
+    lookup = SplitLookup(scale, negative, Vector{SplitCell}(undef, negative + positive))
+    split_cells = [_cell(lookup, split) for split in splits]
+    allunique(split_cells) || return nothing
+    for k in eachindex(lookup.cells)
+        i = searchsortedfirst(split_cells, k)
+        inside = i <= length(splits) && split_cells[i] == k
+        lookup.cells[k] = SplitCell(inside ? splits[i] : NaN, i - 1)
     end
-    SplitLookup(scale, cells)
+    lookup
+end
+
+# Index of the cell containing x. NaN and x beyond the splits land in the end cells.
+@inline function _cell(lookup::SplitLookup, x::Float64)
+    negative = signbit(x) & !isnan(x)
+    last_k = ifelse(negative, lookup.negative, length(lookup.cells) - lookup.negative) - 1.0
+    v = abs(x) * lookup.scale
+    k = unsafe_trunc(Int, ifelse(v < last_k, v, last_k))
+    ifelse(negative, lookup.negative - k, lookup.negative + 1 + k)
 end
 
 # searchsortedlast(splits, x; lt = <), through the lookup when there is one.
 _searchsortedlast(lookup, splits, x) = searchsortedlast(splits, x; lt = <)
 _searchsortedlast(lookup::SplitLookup, splits, x::Float64) = _searchsortedlast(lookup, x)
 
-# Same result as searchsortedlast(splits, x; lt = <) for non-NaN x. Negative x
-# land in the first cell, which no split precedes.
+# Same result as searchsortedlast(splits, x), for every x, and so as
+# searchsortedlast(splits, x; lt = <) for x other than NaN and signed zeros.
 @inline function _searchsortedlast(lookup::SplitLookup, x::Float64)
-    cells = lookup.cells
-    last_cell = length(cells) - 1.0
-    v = x * lookup.scale
-    v = ifelse(v >= 0.0, v, 0.0)
-    v = ifelse(v < last_cell, v, last_cell)
-    c = @inbounds cells[unsafe_trunc(Int, v) + 1]
+    c = @inbounds lookup.cells[_cell(lookup, x)]
     c.below + (c.split <= x)
 end
 
@@ -151,9 +158,9 @@ end
 _log_prob(pt::PolyaTree, x) = _log_prob(pt.pt.split_lookup, pt, x)
 _log_prob(lookup, pt::PolyaTree, x) = _searched_log_prob(pt, x)
 
-# As every split is positive, kfun's ordering of signed zeros changes nothing.
-_log_prob(lookup::SplitLookup, pt::PolyaTree, x::Float64) = isnan(x) ?
-    _searched_log_prob(pt, x) : @inbounds pt.log_leaf_probs[_searchsortedlast(lookup, x) + 1]
+# The lookup orders NaN and signed zeros as kfun does.
+_log_prob(lookup::SplitLookup, pt::PolyaTree, x::Float64) =
+    @inbounds pt.log_leaf_probs[_searchsortedlast(lookup, x) + 1]
 
 function _searched_log_prob(pt::PolyaTree, x)
     J = length(pt.θs)

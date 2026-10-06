@@ -18,6 +18,7 @@ include("polya_tree_scale.jl")
 include("polya_normalization.jl")
 include("polya_split_search.jl")
 include("polya_mh_cache.jl")
+include("polya_batched_likelihood.jl")
 
 Random.seed!(1)
 

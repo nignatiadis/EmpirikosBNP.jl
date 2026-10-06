@@ -11,7 +11,13 @@ mutable struct NealAlgorithm8Polya{D,T,S,W<:AbstractWrappedEBSample,F,V,K} <:
     param_cache::Vector{F} # Storage for Neal algorithm 8 auxiliary parameters
     vp::V
     scratch::K
+    buffers::ScaledLogpdfBuffers # scratch space for the assignment likelihoods
 end
+
+NealAlgorithm8Polya(prior, α_dist, logα, components, empties, assignments, data, m,
+    param_cache, vp, scratch) =
+    NealAlgorithm8Polya(prior, α_dist, logα, components, empties, assignments, data, m,
+        param_cache, vp, scratch, ScaledLogpdfBuffers())
 
 # Avoid scanning accumulated empty slots in the next assignment sweep.
 _should_cleanup(::NealAlgorithm8Polya) = true
@@ -68,13 +74,14 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)
 
     xlik = VarianceIIDSample(x, gc.vp.realized_pt)
 
-    log_probs = vcat(
-        loglikelihood.(Ref(xlik), gc.param_cache) .+ gc.logα .- logm,
-        [
-            isempty(comp) ? -Inf : loglikelihood(xlik, comp.param) + log(comp.n) for
-            comp in gc.components
-        ],
-    )
+    σ²s = vcat(gc.param_cache, [comp.param for comp in gc.components])
+    log_probs = _loglikelihoods!(similar(σ²s), xlik, σ²s, gc.buffers)
+    for k in 1:m
+        log_probs[k] = log_probs[k] + gc.logα - logm
+    end
+    for (k, comp) in enumerate(gc.components)
+        log_probs[m + k] = isempty(comp) ? -Inf : log_probs[m + k] + log(comp.n)
+    end
 
     sample_k = sample(_weights_from_logprobs(log_probs))
 
@@ -105,6 +112,21 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)
 end
 
 
+
+# out[k] = loglikelihood(Z, σ²s[k]) for each k.
+function _loglikelihoods!(out, Z::VarianceIIDSample, σ²s, buffers)
+    out .= loglikelihood.(Ref(Z), σ²s)
+end
+
+function _loglikelihoods!(
+    out,
+    Z::VarianceIIDSample{<:Distributions.LocationScale{<:Any,<:Any,<:PolyaTree},
+        <:ConfigurationSample{<:AbstractVector{Float64}}},
+    σ²s,
+    buffers,
+)
+    _scaled_logpdfs!(out, Z.base, Z.iidsample, σ²s, buffers)
+end
 
 function sample_tree_and_scales!(gc::NealAlgorithm8Polya)
     vp = gc.vp

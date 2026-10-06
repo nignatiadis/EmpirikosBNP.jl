@@ -552,6 +552,76 @@ function _configuration_logpdf(kernel::StudentTKernel, d, config, z̄)
     leaf_sum + length(config.configuration) * constant - (ν + 1) / 2 * log(product)
 end
 
+# Scratch vectors for _scaled_logpdfs!, reused across calls. log_σ[k] is
+# log(abs(σ[k])), recomputed only when σ[k] changes between calls.
+struct ScaledLogpdfBuffers
+    μ::Vector{Float64}
+    σ::Vector{Float64}
+    log_σ::Vector{Float64}
+    x::Vector{Float64}
+    cell::Vector{Int}
+    leaf_sum::Vector{Float64}
+    product::Vector{Float64}
+end
+
+ScaledLogpdfBuffers() = ScaledLogpdfBuffers((Float64[] for _ in 1:4)..., Int[], Float64[], Float64[])
+
+# out[k] = logpdf(sqrt(σ²s[k]) * d, config) for every k.
+_scaled_logpdfs!(out, d::Distributions.LocationScale{<:Any,<:Any,<:PolyaTree},
+    config::ConfigurationSample{<:AbstractVector{Float64}}, σ²s, buffers) =
+    _scaled_logpdfs!(_base_kernel(d.ρ.pt), d.ρ.pt.split_lookup, out, d, config, σ²s, buffers)
+
+_scaled_logpdfs!(kernel, lookup, out, d, config, σ²s, buffers) =
+    map!(σ² -> logpdf(sqrt(σ²) * d, config), out, σ²s)
+
+# The arithmetic of _configuration_logpdf with the loops interchanged: for each
+# observation, the work across scales vectorizes, while each scale's leaf sum and
+# product still accumulate in observation order.
+function _scaled_logpdfs!(kernel::StudentTKernel, lookup::SplitLookup, out, d, config, σ²s, buffers)
+    (; μ₀, σ₀, ν) = kernel
+    pt = d.ρ
+    symmetrized = pt.pt.symmetrized
+    inv_σ₀²ν = 1 / (σ₀^2 * ν)
+    (; μ, σ, log_σ, x, cell, leaf_sum, product) = buffers
+    K = length(σ²s)
+    previous_K = length(σ)
+    foreach(v -> resize!(v, K), (μ, σ, log_σ, x, cell, leaf_sum, product))
+    σ[(previous_K + 1):K] .= NaN # new slots match no scale
+    for k in 1:K
+        s = sqrt(σ²s[k])
+        μ[k] = s * d.μ
+        σₖ = s * d.σ
+        σₖ == σ[k] || (log_σ[k] = log(abs(σₖ)))
+        σ[k] = σₖ
+        leaf_sum[k], product[k] = 0.0, 1.0
+    end
+    for z in config.configuration
+        y = z + config.Z̄
+        @inbounds @simd for k in 1:K
+            xk = (y - μ[k]) / σ[k]
+            xk = symmetrized ? abs(xk) : xk
+            x[k] = xk
+            cell[k] = _cell(lookup, xk)
+            product[k] *= 1 + (xk - μ₀)^2 * inv_σ₀²ν
+        end
+        @inbounds for k in 1:K
+            c = lookup.cells[cell[k]]
+            leaf_sum[k] += pt.log_leaf_probs[c.below + (c.split <= x[k]) + 1]
+        end
+    end
+    base_constant = pt.pt.J * log(2) + pt.base_logpdf(μ₀)
+    n = length(config.configuration)
+    for k in 1:K
+        out[k] = if isfinite(product[k])
+            constant = base_constant - log_σ[k]
+            leaf_sum[k] + n * constant - (ν + 1) / 2 * log(product[k])
+        else
+            logpdf(sqrt(σ²s[k]) * d, config)
+        end
+    end
+    out
+end
+
 
 
 #function Distributions.pdf(d::Distribution, iid_sample::AbstractIIDSample)

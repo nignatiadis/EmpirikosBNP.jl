@@ -89,22 +89,28 @@ function sample_variance!(vp, data=vp.data)
     var_iid = VarianceIIDSample(IIDSample(data), vp.realized_pt)
     steps <= 0 && return transition_prev
     current_loglik = loglikelihood(var_iid, transition_prev)
+    current_logq = logpdf(proposal_d, transition_prev)
+    current_logprior = logpdf(vp.σ²_prior, transition_prev)
 
     for _ in Base.OneTo(steps)
         candidate = rand(proposal_d)
         candidate_loglik = loglikelihood(var_iid, candidate)
+        candidate_logq = logpdf(proposal_d, candidate)
+        candidate_logprior = logpdf(vp.σ²_prior, candidate)
 
-        logα = logpdf(proposal_d, transition_prev) -  
-               logpdf(proposal_d, candidate) +
+        logα = current_logq -
+               candidate_logq +
                candidate_loglik - current_loglik +
-               logpdf(vp.σ²_prior, candidate) -
-               logpdf(vp.σ²_prior, transition_prev)
-        
+               candidate_logprior -
+               current_logprior
+
         if -Random.randexp() < logα
-            transition_prev = candidate 
+            transition_prev = candidate
             current_loglik = candidate_loglik
-        end 
-    end 
+            current_logq = candidate_logq
+            current_logprior = candidate_logprior
+        end
+    end
     vp.σ² = transition_prev
     transition_prev
 end
@@ -121,21 +127,23 @@ function impute_zbar!(vp, config_sample::ConfigurationSample)
     steps = vp.imputation_mh.mh_steps
     steps <= 0 && return transition_prev
     current_loglik = logpdf(realized_pt, config_sample, transition_prev)
-
+    current_logq = logpdf(proposal_d, transition_prev)
 
     for _ in Base.OneTo(steps)
         candidate = rand(proposal_d)
         candidate_loglik = logpdf(realized_pt, config_sample, candidate)
+        candidate_logq = logpdf(proposal_d, candidate)
 
-        logα = logpdf(proposal_d, transition_prev) -  
-               logpdf(proposal_d, candidate) +
+        logα = current_logq -
+               candidate_logq +
                candidate_loglik - current_loglik
 
         if -Random.randexp() < logα
-            transition_prev = candidate 
+            transition_prev = candidate
             current_loglik = candidate_loglik
-        end 
-    end 
+            current_logq = candidate_logq
+        end
+    end
     config_sample.Z̄ = transition_prev
     transition_prev
 end 

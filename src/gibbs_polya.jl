@@ -12,12 +12,13 @@ mutable struct NealAlgorithm8Polya{D,T,S,W<:AbstractWrappedEBSample,F,V,K} <:
     vp::V
     scratch::K
     buffers::ScaledLogpdfBuffers # scratch space for the assignment likelihoods
+    log_counts::Vector{Float64} # log_counts[n] == log(n), for cluster sizes
 end
 
 NealAlgorithm8Polya(prior, α_dist, logα, components, empties, assignments, data, m,
     param_cache, vp, scratch) =
     NealAlgorithm8Polya(prior, α_dist, logα, components, empties, assignments, data, m,
-        param_cache, vp, scratch, ScaledLogpdfBuffers())
+        param_cache, vp, scratch, ScaledLogpdfBuffers(), log.(1:length(data)))
 
 # Avoid scanning accumulated empty slots in the next assignment sweep.
 _should_cleanup(::NealAlgorithm8Polya) = true
@@ -80,7 +81,7 @@ function StatsBase.sample!(gc::NealAlgorithm8Polya, i::Int)
         log_probs[k] = log_probs[k] + gc.logα - logm
     end
     for (k, comp) in enumerate(gc.components)
-        log_probs[m + k] = isempty(comp) ? -Inf : log_probs[m + k] + log(comp.n)
+        log_probs[m + k] = isempty(comp) ? -Inf : log_probs[m + k] + gc.log_counts[comp.n]
     end
 
     sample_k = sample(_weights_from_logprobs(log_probs))
